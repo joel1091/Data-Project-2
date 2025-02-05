@@ -50,6 +50,7 @@ def get_random_ayudante():
         "nombre": f"{user['name']['first']} {user['name']['last']}",
         "ubicacion": generate_valencia_coordinates(),
         "categoria": random.choice(["agua", "electricidad", "infraestructura", "salud"]),
+        "nivel_urgencia": random.randint(1, 5),
         "created_at": datetime.datetime.now().isoformat()
     }
     return ayudante
@@ -63,6 +64,7 @@ def get_manual_input_ayudante():
     ayudante["nombre"] = input("Ingrese nombre: ")
     ayudante["ubicacion"] = input("Ingrese ubicación (coordenadas) en formato 'lat,lon': ")
     ayudante["categoria"] = input("Ingrese la categoría: ")
+    ayudante["nivel_urgencia"] = int(input("Ingrese nivel de urgencia (1-5): "))
     ayudante["created_at"] = datetime.datetime.now().isoformat()
     return ayudante
 
