@@ -31,6 +31,8 @@ def generate_valencia_coordinates():
     lon = round(random.uniform(-0.8, -0.2), 6)
     return f"{lat},{lon}"
 
+etiquetas = ["Alimentos", "Medicamentos", "Limpieza", "Maquinaria y Transporte", "Asistencia Social"]
+
 def get_random_ayudante():
     """
     Genera datos del ayudante usando la API de randomuser.me.
@@ -49,7 +51,7 @@ def get_random_ayudante():
         "id": str(uuid.uuid4()),
         "nombre": f"{user['name']['first']} {user['name']['last']}",
         "ubicacion": generate_valencia_coordinates(),
-        "categoria": random.choice(["agua", "electricidad", "infraestructura", "salud"]),
+        "etiqueta": random.choice(etiquetas),
         "nivel_urgencia": random.randint(1, 5),
         "created_at": datetime.datetime.now().isoformat()
     }
@@ -59,14 +61,40 @@ def get_manual_input_ayudante():
     """
     Permite al usuario ingresar manualmente los datos de un ayudante.
     """
-    ayudante = {}
-    ayudante["id"] = str(uuid.uuid4())
-    ayudante["nombre"] = input("Ingrese nombre: ")
-    ayudante["ubicacion"] = input("Ingrese ubicación (coordenadas) en formato 'lat,lon': ")
-    ayudante["categoria"] = input("Ingrese la categoría: ")
-    ayudante["nivel_urgencia"] = int(input("Ingrese nivel de urgencia (1-5): "))
-    ayudante["created_at"] = datetime.datetime.now().isoformat()
-    return ayudante
+
+    while True:
+        nombre =input("Ingrese nombre: ").strip()
+        if nombre:
+            break
+        print("Error: El nombre no puede estar vacío. Intente de nuevo.")
+
+    ubicacion = generate_valencia_coordinates() #-------------------Esto se tiene que cambiar para que se pueda ingresar manualmente
+
+    while True:
+        etiqueta = input(f"Ingrese etiqueta {etiquetas}").strip()
+        if etiqueta in etiquetas:
+            break
+        print(f"Error: La etiqueta debe ser una de las siguientes: {etiquetas}. Intente de nuevo.")
+
+    while True:
+        try:
+            urgencia = int(input("Ingrese nivel de urgencia (1-5): ").strip())
+            if 1<= urgencia <= 5:
+                break
+            else:
+                print("Error: La urgencia debe estar entre 1 y 5. Intente de nuevo.")
+        except ValueError:
+            print("Error: La urgencia debe ser un número entero. Intente de nuevo.")
+
+    necesitado = {
+        "id": str(uuid.uuid4()),
+        "nombre": nombre,
+        "ubicacion": ubicacion,
+        "etiqueta": etiqueta,
+        "urgencia": urgencia,
+        "created_at": datetime.datetime.now().isoformat()  
+    }
+    return necesitado
 
 def run_automatic_generator():
     """
