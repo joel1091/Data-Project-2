@@ -6,8 +6,58 @@ import random
 import os
 import time
 import threading
+import re
 from google.cloud import pubsub_v1
 from dotenv import load_dotenv
+
+#Lista de descripciones + tags        ------Esto se tiene que poder cambiar de alguna forma para que no haya tanto texto------
+
+categorias = {
+    "Alimentos": [
+        "Necesito agua potable y alimentos no perecederos.",
+        "Necesito pañales y leche en polvo para bebés.",
+        "Necesito alimentos sin gluten para celíacos.",
+        "Necesito comida especial para diabéticos.",
+        "Necesito frutas y verduras frescas.",
+        "Necesito alimentos para mascotas (perros, gatos, etc.).",
+        "Necesito ayuda con la distribución de alimentos en mi zona."
+    ],
+    "Medicamentos": [
+        "Necesito medicamentos urgentes (especificar).",
+        "Necesito insulina o medicación para la diabetes.",
+        "Necesito medicamentos para la presión arterial.",
+        "Necesito antibióticos o antiinflamatorios.",
+        "Necesito inhaladores para personas asmáticas.",
+        "Necesito material de primeros auxilios (vendas, desinfectante, gasas, etc.).",
+        "Necesito asistencia para conseguir recetas médicas urgentes."
+    ],
+    "Limpieza": [
+        "Necesito productos de higiene personal y limpieza.",
+        "Necesito ayuda para limpiar mi vivienda afectada por la inundación.",
+        "Necesito ayuda para retirar agua de mi casa/local.",
+        "Necesito desinfectantes para prevenir enfermedades.",
+        "Necesito detergentes y productos para lavar ropa afectada por el agua."
+    ],
+    "Maquinaria y Transporte": [
+        "Necesito ayuda para mover mi coche averiado o inundado.",
+        "Necesito reparación urgente en mi hogar (electricidad, fontanería, etc.).",
+        "Necesito ayuda para retirar escombros o muebles dañados.",
+        "Necesito transporte para ir al hospital o centro de salud.",
+        "Necesito transporte para desplazarme a un refugio o casa de familiares.",
+        "Necesito herramientas y equipos para realizar reparaciones en viviendas afectadas."
+    ],
+    "Asistencia Social": [
+        "Hay personas mayores/niños en mi hogar que necesitan asistencia urgente.",
+        "Necesito ayuda para una persona con movilidad reducida.",
+        "Necesito atención psicológica o emocional.",
+        "Necesito un lugar temporal donde alojarme.",
+        "Necesito información sobre refugios y albergues disponibles.",
+        "Necesito información sobre cómo solicitar ayudas económicas o materiales.",
+        "Necesito contactar con voluntarios que puedan ayudar en mi zona.",
+        "Necesito ayuda con mascotas afectadas por la DANA.",
+        "Necesito asesoramiento para reconstruir mi vivienda."
+    ]
+}
 
 # Cargar variables de entorno
 load_dotenv()
@@ -42,10 +92,13 @@ def generate_dana_coordinates():
     lon = round(random.uniform(zone["lon_min"], zone["lon_max"]), 6)
     return f"{lat},{lon}"
 
+def generar_telefono_movil():
+
+    return random.choice(['6', '7']) + ''.join([str(random.randint(0, 9)) for _ in range(8)])
+
 def get_random_necesitado():
     """
     Genera datos del necesitado usando la API de randomuser.me.
-    Con un 50% de probabilidad, se adjunta una imagen (subida a Storage).
     La ubicación se genera usando zonas afectadas por la DANA.
     """
     url = "https://randomuser.me/api/"
@@ -57,18 +110,17 @@ def get_random_necesitado():
         return None
     data = response.json()
     user = data["results"][0]
-
+    etiqueta = random.choice(list(categorias.keys()))
+    
     necesitado = {
         "id": str(uuid.uuid4()),
         "nombre": f"{user['name']['first']} {user['name']['last']}",
         "ubicacion": generate_dana_coordinates(),  # Ubicación en zona DANA
-        "descripcion": random.choice([
-            "Necesito ayuda urgente.",
-            "Requiero asistencia para una situación complicada.",
-            "Estoy en busca de apoyo.",
-            "Solicito ayuda para resolver un problema."
-        ]),
-        "created_at": datetime.datetime.now().isoformat()
+        "etiqueta": etiqueta,
+        "descripcion": random.choice(categorias[etiqueta]),
+        "created_at": datetime.datetime.now().isoformat(),
+        "urgencia": random.randint([1, 5]),
+        "telefono": generar_telefono_movil()
     }
     return necesitado
 
@@ -78,14 +130,61 @@ def get_manual_input_necesitado():
     La foto es opcional: si se proporciona, se sube a Storage.
     La ubicación se genera usando zonas afectadas por la DANA.
     """
-    necesitado = {}
-    necesitado["id"] = str(uuid.uuid4())
-    necesitado["nombre"] = input("Ingrese nombre: ")
-    # Usamos generate_dana_coordinates para simular ubicación realista en zonas DANA
-    necesitado["ubicacion"] = generate_dana_coordinates()
-    necesitado["descripcion"] = input("Ingrese una descripción: ")
-    necesitado["created_at"] = datetime.datetime.now().isoformat()
+
+    etiquetas_validas = ["Alimentos", "Medicamentos", "Limpieza", "Maquinaria y Transporte", "Asistencia Social"]
+
+    while True:
+        
+        nombre =input("Ingrese nombre: ").strip()
+        if nombre:
+            break
+        print("Error: El nombre no puede estar vacío. Intente de nuevo.")
+
+    ubicacion = generate_dana_coordinates() #-------------------Esto se tiene que cambiar para que se pueda ingresar manualmente
+
+    while True:
+
+        etiqueta = input(f"Ingrese etiqueta {etiquetas_validas}").strip()
+        if etiqueta in etiquetas_validas:
+            break
+        print(f"Error: La etiqueta debe ser una de las siguientes: {etiquetas_validas}. Intente de nuevo.")
+
+    while True:
+        descripcion = input("Ingrese una descripción: ").strip()
+        if descripcion:
+            break
+        print("Error: La descripción no puede estar vacía. Intente de nuevo.")
+
+    while True:
+
+        try:
+            urgencia = int(input("Ingrese nivel de urgencia (1-5): ").strip())
+            if 1<= urgencia <= 5:
+                break
+            else:
+                print("Error: La urgencia debe estar entre 1 y 5. Intente de nuevo.")
+        except ValueError:
+            print("Error: La urgencia debe ser un número entero. Intente de nuevo.")
+
+    while True:
+
+        telefono = input("Ingrese su número de teléfono móvil (9 dígitos) ").strip()
+        if re.fullmatch(r"\d{9}", telefono):
+            break
+        print("Error: El número de teléfono debe tener exactamente 9 dígitos numéricos. Intente de nuevo.")
+
+    necesitado = {
+        "id": str(uuid.uuid4()),
+        "nombre": nombre,
+        "ubicacion": ubicacion,
+        "etiqueta": etiqueta,
+        "descripcion": descripcion,
+        "created_at": datetime.datetime.now().isoformat(),
+        "urgencia": urgencia,
+        "telefono": telefono
+    }
     return necesitado
+
 
 def run_automatic_generator():
     """

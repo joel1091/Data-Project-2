@@ -1,5 +1,5 @@
-project_id = "dataproject2425"
+project_id = "<PROJECT ID>"
 region     = "europe-west1"
 zone       = "europe-west1-b"
-subnetwork = "projects/dataproject2425/regions/europe-west1/subnetworks/default"
-service_account_email = "dataproject2@dataproject2425.iam.gserviceaccount.com"
+subnetwork = "projects/<PROJECT ID>/regions/europe-west1/subnetworks/default"
+service_account_email = "CAMBIAR ESTO A TU SERVICE ACCOUNT"
