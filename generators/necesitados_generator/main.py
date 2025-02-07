@@ -45,7 +45,6 @@ def generate_dana_coordinates():
 def get_random_necesitado():
     """
     Genera datos del necesitado usando la API de randomuser.me.
-    Con un 50% de probabilidad, se adjunta una imagen (subida a Storage).
     La ubicación se genera usando zonas afectadas por la DANA.
     """
     url = "https://randomuser.me/api/"
@@ -61,6 +60,7 @@ def get_random_necesitado():
     necesitado = {
         "id": str(uuid.uuid4()),
         "nombre": f"{user['name']['first']} {user['name']['last']}",
+        "telefono": user["phone"],
         "ubicacion": generate_dana_coordinates(),  # Ubicación en zona DANA
         "descripcion": random.choice([
             "Necesito ayuda urgente.",
@@ -68,6 +68,8 @@ def get_random_necesitado():
             "Estoy en busca de apoyo.",
             "Solicito ayuda para resolver un problema."
         ]),
+        "nivel_urgencia": random.randint(1,5),
+        "category": random.choice(["agua", "alimentos", "electricidad", "salud"]),
         "created_at": datetime.datetime.now().isoformat()
     }
     return necesitado
@@ -81,9 +83,12 @@ def get_manual_input_necesitado():
     necesitado = {}
     necesitado["id"] = str(uuid.uuid4())
     necesitado["nombre"] = input("Ingrese nombre: ")
+    necesitado["telefono"] = input("Ingrese teléfono: ")
     # Usamos generate_dana_coordinates para simular ubicación realista en zonas DANA
     necesitado["ubicacion"] = generate_dana_coordinates()
     necesitado["descripcion"] = input("Ingrese una descripción: ")
+    necesitado["nivel_urgencia"] = int(input("Ingrese nivel de urgencia (1-5): "))
+    necesitado["category"] = input("Ingrese categoría: ")
     necesitado["created_at"] = datetime.datetime.now().isoformat()
     return necesitado
 
