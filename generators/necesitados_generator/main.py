@@ -9,9 +9,9 @@ import threading
 import re
 from google.cloud import pubsub_v1
 from dotenv import load_dotenv
+from geopy.geocoders import Nominatim
 
-#Lista de descripciones + tags        ------Esto se tiene que poder cambiar de alguna forma para que no haya tanto texto------
-
+# Diccionario de categorías con descripciones (separando Maquinaria y Transporte)
 categorias = {
     "Alimentos": [
         "Necesito agua potable y alimentos no perecederos.",
@@ -38,13 +38,14 @@ categorias = {
         "Necesito desinfectantes para prevenir enfermedades.",
         "Necesito detergentes y productos para lavar ropa afectada por el agua."
     ],
-    "Maquinaria y Transporte": [
-        "Necesito ayuda para mover mi coche averiado o inundado.",
+    "Maquinaria": [
         "Necesito reparación urgente en mi hogar (electricidad, fontanería, etc.).",
         "Necesito ayuda para retirar escombros o muebles dañados.",
-        "Necesito transporte para ir al hospital o centro de salud.",
-        "Necesito transporte para desplazarme a un refugio o casa de familiares.",
         "Necesito herramientas y equipos para realizar reparaciones en viviendas afectadas."
+    ],
+    "Transporte": [
+        "Necesito transporte para ir al hospital o centro de salud.",
+        "Necesito transporte para desplazarme a un refugio o casa de familiares."
     ],
     "Asistencia Social": [
         "Hay personas mayores/niños en mi hogar que necesitan asistencia urgente.",
@@ -64,7 +65,6 @@ load_dotenv()
 PROJECT_ID = os.getenv("GCP_PROJECT_ID", "your-gcp-project-id")
 TOPIC_NECESITADOS = "necesitados-events"
 
-
 def publish_message(topic, message):
     """
     Publica el mensaje en el tópico de Pub/Sub.
@@ -80,11 +80,8 @@ def generate_dana_coordinates():
     Se selecciona aleatoriamente entre varias zonas predefinidas (con límites aproximados).
     """
     dana_zones = [
-        # Zona 1: Ejemplo de área afectada
         {"lat_min": 39.30, "lat_max": 39.40, "lon_min": -0.45, "lon_max": -0.35},
-        # Zona 2: Otra área potencialmente afectada
         {"lat_min": 39.35, "lat_max": 39.45, "lon_min": -0.50, "lon_max": -0.40},
-        # Zona 3: Área adicional de afectación
         {"lat_min": 39.25, "lat_max": 39.35, "lon_min": -0.55, "lon_max": -0.45}
     ]
     zone = random.choice(dana_zones)
@@ -93,13 +90,30 @@ def generate_dana_coordinates():
     return f"{lat},{lon}"
 
 def generar_telefono_movil():
-
+    """
+    Genera un número de teléfono móvil español de 9 dígitos.
+    """
     return random.choice(['6', '7']) + ''.join([str(random.randint(0, 9)) for _ in range(8)])
+
+def reverse_geocode(lat, lon):
+    """
+    Utiliza geopy con Nominatim para convertir latitud y longitud en el nombre de una población.
+    """
+    geolocator = Nominatim(user_agent="necesitado_geocoder")
+    try:
+        time.sleep(1)  # Respeta los límites de uso de Nominatim
+        location = geolocator.reverse((lat, lon), language="es")
+        if location and location.raw and "address" in location.raw:
+            address = location.raw["address"]
+            return address.get("city") or address.get("town") or address.get("village")
+    except Exception as e:
+        print("Error en reverse geocoding:", e)
+    return None
 
 def get_random_necesitado():
     """
     Genera datos del necesitado usando la API de randomuser.me.
-    La ubicación se genera usando zonas afectadas por la DANA.
+    La ubicación se genera usando zonas afectadas por la DANA y se realiza reverse geocoding.
     """
     url = "https://randomuser.me/api/"
     try:
@@ -112,14 +126,23 @@ def get_random_necesitado():
     user = data["results"][0]
     etiqueta = random.choice(list(categorias.keys()))
     
+    coords = generate_dana_coordinates()  
+    try:
+        lat_str, lon_str = coords.split(',')
+        poblacion = reverse_geocode(float(lat_str), float(lon_str))
+    except Exception as e:
+        print("Error al realizar reverse geocoding en modo automático:", e)
+        poblacion = ""
+    
     necesitado = {
         "id": str(uuid.uuid4()),
         "nombre": f"{user['name']['first']} {user['name']['last']}",
-        "ubicacion": generate_dana_coordinates(),  # Ubicación en zona DANA
+        "ubicacion": coords,
+        "poblacion": poblacion if poblacion else "",
         "etiqueta": etiqueta,
         "descripcion": random.choice(categorias[etiqueta]),
         "created_at": datetime.datetime.now().isoformat(),
-        "urgencia": random.randint([1, 5]),
+        "nivel_urgencia": random.randint(1, 5),
         "telefono": generar_telefono_movil()
     }
     return necesitado
@@ -127,24 +150,35 @@ def get_random_necesitado():
 def get_manual_input_necesitado():
     """
     Permite al usuario ingresar manualmente los datos del necesitado.
-    La foto es opcional: si se proporciona, se sube a Storage.
-    La ubicación se genera usando zonas afectadas por la DANA.
+    Se permite ingresar la ubicación en formato 'lat,lon' y se realiza reverse geocoding para obtener el nombre de la población.
     """
-
-    etiquetas_validas = ["Alimentos", "Medicamentos", "Limpieza", "Maquinaria y Transporte", "Asistencia Social"]
+    etiquetas_validas = ["Alimentos", "Medicamentos", "Limpieza", "Maquinaria", "Transporte", "Asistencia Social"]
 
     while True:
-        
-        nombre =input("Ingrese nombre: ").strip()
+        nombre = input("Ingrese nombre: ").strip()
         if nombre:
             break
         print("Error: El nombre no puede estar vacío. Intente de nuevo.")
 
-    ubicacion = generate_dana_coordinates() #-------------------Esto se tiene que cambiar para que se pueda ingresar manualmente
+    # Ingresar manualmente la ubicación
+    while True:
+        ubicacion = input("Ingrese ubicación (coordenadas) en formato 'lat,lon': ").strip()
+        if ubicacion:
+            try:
+                lat_str, lon_str = ubicacion.split(',')
+                lat = float(lat_str.strip())
+                lon = float(lon_str.strip())
+            except Exception as e:
+                print("Error: Formato de ubicación incorrecto. Use 'lat,lon'.")
+                continue
+            break
+        print("Error: La ubicación no puede estar vacía. Intente de nuevo.")
+
+    # Realizar reverse geocoding para obtener el nombre de la población
+    poblacion = reverse_geocode(lat, lon)
 
     while True:
-
-        etiqueta = input(f"Ingrese etiqueta {etiquetas_validas}").strip()
+        etiqueta = input(f"Ingrese etiqueta {etiquetas_validas}: ").strip()
         if etiqueta in etiquetas_validas:
             break
         print(f"Error: La etiqueta debe ser una de las siguientes: {etiquetas_validas}. Intente de nuevo.")
@@ -156,10 +190,9 @@ def get_manual_input_necesitado():
         print("Error: La descripción no puede estar vacía. Intente de nuevo.")
 
     while True:
-
         try:
             urgencia = int(input("Ingrese nivel de urgencia (1-5): ").strip())
-            if 1<= urgencia <= 5:
+            if 1 <= urgencia <= 5:
                 break
             else:
                 print("Error: La urgencia debe estar entre 1 y 5. Intente de nuevo.")
@@ -167,8 +200,7 @@ def get_manual_input_necesitado():
             print("Error: La urgencia debe ser un número entero. Intente de nuevo.")
 
     while True:
-
-        telefono = input("Ingrese su número de teléfono móvil (9 dígitos) ").strip()
+        telefono = input("Ingrese su número de teléfono móvil (9 dígitos): ").strip()
         if re.fullmatch(r"\d{9}", telefono):
             break
         print("Error: El número de teléfono debe tener exactamente 9 dígitos numéricos. Intente de nuevo.")
@@ -177,6 +209,7 @@ def get_manual_input_necesitado():
         "id": str(uuid.uuid4()),
         "nombre": nombre,
         "ubicacion": ubicacion,
+        "poblacion": poblacion if poblacion else "",
         "etiqueta": etiqueta,
         "descripcion": descripcion,
         "created_at": datetime.datetime.now().isoformat(),
@@ -184,7 +217,6 @@ def get_manual_input_necesitado():
         "telefono": telefono
     }
     return necesitado
-
 
 def run_automatic_generator():
     """
