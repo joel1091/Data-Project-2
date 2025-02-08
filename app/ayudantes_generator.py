@@ -1,3 +1,4 @@
+# ayudantes_generator.py
 import uuid
 import datetime
 import json
@@ -38,7 +39,7 @@ def reverse_geocode(lat, lon):
     """
     geolocator = Nominatim(user_agent="ayudante_geocoder")
     try:
-        time.sleep(1)  # Breve retraso para respetar límites de Nominatim
+        time.sleep(1)  # Breve retraso para respetar los límites de Nominatim
         location = geolocator.reverse((lat, lon), language="es")
         if location and location.raw and "address" in location.raw:
             address = location.raw["address"]
