@@ -79,11 +79,10 @@ class FormatFirestoreDocument(beam.DoFn):
             if event in element and len(element[event]) > 0:
                 for record in element[event]:
                     try:
-                        doc_id = record.get('created_at')  # Use 'created_at' as the document ID
-                        db.collection(self.firestore_collection).document('not_matched').collection(event).document(doc_id).set(record)
+                        db.collection(self.firestore_collection).document('not_matched').collection(event).document(element[event]['created_at']).set(element[event])
                         logging.info(f"Record stored in Firestore.")
                     except Exception as err:
-                        logging.error(f"Error storing {event}: {err}")
+                        logging.error(f"Error storing: {err}")
         # else:
         #     try:
         #         db.collection(self.firestore_collection).document('matched').collection('data').document('created_at').set(element)
