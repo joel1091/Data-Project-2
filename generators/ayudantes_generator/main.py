@@ -12,7 +12,7 @@ from geopy.geocoders import Nominatim
 
 # Cargar variables de entorno
 load_dotenv()
-PROJECT_ID = os.getenv("GCP_PROJECT_ID", "steam-circlet-447114-h5")
+PROJECT_ID = os.getenv("GCP_PROJECT_ID", "your-gcp-project-id")
 TOPIC_AYUDANTES = "ayudantes-events"
 
 def publish_message(topic, message):
