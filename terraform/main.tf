@@ -43,7 +43,7 @@ resource "google_pubsub_subscription" "necesitados_events_dead_letter_sub" {
 
 #Creacion de Bucket
 resource "google_storage_bucket" "bucket" {
-  name          = "edem-terraform-state-dataproject25"
+  name          = "edem-terraform-state-dataproject2"
   location      = "EU"
   force_destroy = true
 }

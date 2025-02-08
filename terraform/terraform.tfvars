@@ -1,5 +1,5 @@
-project_id = "steam-circlet-447114-h5"
+project_id = "dataproject2425"
 region     = "europe-west1"
 zone       = "europe-west1-b"
-subnetwork = "projects/steam-circlet-447114-h5/regions/europe-west1/subnetworks/default"
-service_account_email = "steam-circlet-447114-h5@appspot.gserviceaccount.com"
+subnetwork = "projects/dataproject2425/regions/europe-west1/subnetworks/default"
+service_account_email = "dataproject2@dataproject2425.iam.gserviceaccount.com"
