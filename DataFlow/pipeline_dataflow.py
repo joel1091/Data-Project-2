@@ -13,6 +13,7 @@ import math
 
 
 # Decode messages from Pub/Sub
+### !!! en ambos generadores, el campo no se llama igual, en uno categoria y en otro etiqueta, para facitarlo, cambiarlo?
 def ParsePubSubMessage1(message):
     pubsub_message = message.decode('utf-8')
     msg = json.loads(pubsub_message)
@@ -46,19 +47,53 @@ class FilterbyDistance(beam.DoFn):
 
         for volunteer in volunteer_data:
             lat_volunteer, lon_volunteer = map(float, volunteer['ubicacion'].split(','))
-            radio_max = volunteer['radio_disponible_km']
+            radio_max = volunteer.get('radio_disponible_km')
+
+            if radio_max is None:
+                radio_max = 100
 
             for request in help_data:
                 lat_request, lon_request = map(float, request['ubicacion'].split(','))
                 distance = self.haversine(lat_volunteer, lon_volunteer, lat_request, lon_request)
                 
-                if distance <= radio_max:
-                    yield (category, {"volunteer": volunteer,
+                data = (category, {"volunteer": volunteer,
                                     "request": request,
                                     "distance": distance
                                     })
+                
+                if distance <= radio_max:
+                    yield data
 
-# MATCH
+# Store in Firestore
+class FormatFirestoreDocument(beam.DoFn):
+
+    def __init__(self,mode,firestore_collection):
+        self.mode = mode
+        self.firestore_collection = firestore_collection
+
+    def process(self, element):
+        db = firestore.Client()
+        events = ['category', 'volunteer','request'] if self.mode == 'raw' else ['category', 'volunteer','request','distance']
+
+        for event in events:
+            if event in element and len(element[event]) > 0:
+                for record in element[event]:
+                    try:
+                        doc_id = record.get('created_at')  # Use 'created_at' as the document ID
+                        db.collection(self.firestore_collection).document('not_matched').collection(event).document(doc_id).set(record)
+                        logging.info(f"Record stored in Firestore.")
+                    except Exception as err:
+                        logging.error(f"Error storing {event}: {err}")
+        # else:
+        #     try:
+        #         db.collection(self.firestore_collection).document('matched').collection('data').document('created_at').set(element)
+        #         logging.info(f"Record stored in Firestore for category {element['category']}")
+        #     except Exception as err:
+        #         logging.error(err)
+    
+
+
+# MATCH STATUS
 class MatchedStatusDoFn(beam.DoFn):
     def process(self, element):
         category, (help_data, volunteer_data) = element
@@ -76,29 +111,6 @@ class MatchedStatusDoFn(beam.DoFn):
             yield beam.pvalue.TaggedOutput("matched_users", matched_data)
         else:
             yield beam.pvalue.TaggedOutput("not_matched_users", matched_data)
-
-# Store in Firestore
-# class FormatFirestoreDocument(beam.DoFn):
-
-#     def __init__(self,mode,firestore_collection):
-#         self.mode = mode
-#         self.firestore_collection = firestore_collection
-
-#     def process(self, element):
-#         db = firestore.Client()
-
-#         events = ['battery_info', 'driving_info', 'environment_info'] if self.mode == 'raw' else ['battery_info', 'driving_info', 'environment_info', 'inspection']
-
-#         for event in events:
-#             if len(element[event]) > 0:
-
-#                 try:
-#                     db.collection(self.firestore_collection).document(element['categoria']).collection(event).document(element[event]['timestamp']).set(element[event])
-#                     logging.info("Records have been stored in Firestore.")
-
-#                 except Exception as err:
-#                     logging.error(err)
-
 
 
 def run():
@@ -122,8 +134,7 @@ def run():
     
     parser.add_argument(
                 '--firestore_collection',
-                required=False,
-                default="<NAME>",
+                required=True,
                 help='The Firestore collection where requests data will be stored.')
     
     # parser.add_argument(
@@ -155,29 +166,44 @@ def run():
                 # - Sliding: si una no hace match en una window, posibilidad en la siguiente
                 # - Sessions:si no llegasen mensajes en X tiempo, cerrar la window para no "retrasar" la llegada de la ayuda
 
-                | "Fixed Window for help data" >> beam.WindowInto(beam.window.SlidingWindows(60, 30))
+                | "Session Window for help data" >> beam.WindowInto(beam.window.Sessions(30))
         )
 
         volunteer_data = (
             p
                 | "Read volunteer data from PubSub" >> beam.io.ReadFromPubSub(subscription=args.volunteers_subscription)
                 | "Parse JSON volunteer messages" >> beam.Map(ParsePubSubMessage2)
-                | "Fixed Window for volunteer data" >> beam.WindowInto(beam.window.SlidingWindows(60, 30))
+                | "Session Window for volunteer data" >> beam.WindowInto(beam.window.Sessions(30))
         )
 
         # CoGroupByKey
         grouped_data = (volunteer_data, help_data) | "Merge PCollections" >> beam.CoGroupByKey()
 
-        # Filter by distance
-        filtered_data = ( 
-            grouped_data 
-            | "Filter by distance" >> beam.ParDo(FilterbyDistance())
-        )
+        # Partitions: 1) category_grouped: a match by category has been found 2) category_not_grouped: category has not been matched.
         
-        processed_data = (
-            filtered_data
-            | "Check match status" >> beam.ParDo(MatchedStatusDoFn()).with_outputs("matched_users", "not_matched_users")
+        category_grouped, category_not_grouped = (
+            grouped_data | "Partition by volunteer found" >> beam.Partition(lambda kv, _: 0 if len(kv[1][0]) and len(kv[1][1]) > 0 else 1, 2)
         )
+        ######## No salen o tardan en salir las category_grouped, no sé si es cosa de la window también.
+
+        # category_grouped | "Debug category grouped data" >> beam.Map(lambda x: logging.info(f"Grouped data: {x}")) 
+        # category_not_grouped | "Debug not grouped data" >> beam.Map(lambda x: logging.info(f"Not grouped data: {x}")) 
+
+        send_not_grouped = (
+            category_not_grouped
+            | "Send not grouped messages to Firestore" >> beam.ParDo(FormatFirestoreDocument(mode='raw', firestore_collection=args.firestore_collection))
+        )
+
+        # Filter by distance
+        # filtered_data = ( 
+        #     category_grouped
+        #     | "Filter by distance" >> beam.ParDo(FilterbyDistance())
+        # )
+        
+        # processed_data = (
+        #     filtered_data
+        #     | "Check match status" >> beam.ParDo(MatchedStatusDoFn()).with_outputs("matched_users", "not_matched_users")
+        # )
         # (
         #     processed_data.matched_users
         #         | "Write matched_users documents" >> beam.ParDo(FormatFirestoreocument(mode='raw', firestore_collection=args.firestore_collection))
