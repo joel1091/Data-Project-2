@@ -90,14 +90,7 @@ class StoreFirestoreDocument(beam.DoFn):
                             logging.info(f"Stored {event} record in Firestore: {doc_id}")
                     except Exception as err:
                         logging.error(f"Error storing {event}: {err}")
-        # else:
-        #     try:
-        #         db.collection(self.firestore_collection).document('matched').collection('data').document('created_at').set(element)
-        #         logging.info(f"Record stored in Firestore for category {element['category']}")
-        #     except Exception as err:
-        #         logging.error(err)
     
-
 
 # MATCH STATUS
 class MatchedStatusDoFn(beam.DoFn):
