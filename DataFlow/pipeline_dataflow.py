@@ -65,7 +65,7 @@ class FilterbyDistance(beam.DoFn):
                     yield data
 
 # Store in Firestore
-class FormatFirestoreDocument(beam.DoFn):
+class StoreFirestoreDocument(beam.DoFn):
 
     def __init__(self,mode,firestore_collection):
         self.mode = mode
@@ -73,16 +73,23 @@ class FormatFirestoreDocument(beam.DoFn):
 
     def process(self, element):
         db = firestore.Client()
-        events = ['category', 'volunteer','request'] if self.mode == 'raw' else ['category', 'volunteer','request','distance']
+        events = ['volunteer', 'request']
+        category, (volunteer_data, request_data) = element
+
+        events = ['volunteer','request'] if self.mode == 'raw' else ['volunteer','request','distance']
 
         for event in events:
-            if event in element and len(element[event]) > 0:
-                for record in element[event]:
+            data_list = volunteer_data if event == 'volunteer' else request_data
+
+            if data_list:
+                for record in data_list:
                     try:
-                        db.collection(self.firestore_collection).document('not_matched').collection(event).document(element[event]['created_at']).set(element[event])
-                        logging.info(f"Record stored in Firestore.")
+                        doc_id = record.get('created_at', '')
+                        if doc_id:
+                            db.collection(self.firestore_collection).document('not_matched').collection(event).document(doc_id).set(record)
+                            logging.info(f"Stored {event} record in Firestore: {doc_id}")
                     except Exception as err:
-                        logging.error(f"Error storing: {err}")
+                        logging.error(f"Error storing {event}: {err}")
         # else:
         #     try:
         #         db.collection(self.firestore_collection).document('matched').collection('data').document('created_at').set(element)
@@ -160,37 +167,27 @@ def run():
             p
                 | "Read help data from PubSub" >> beam.io.ReadFromPubSub(subscription=args.help_subscription)
                 | "Parse JSON help messages" >> beam.Map(ParsePubSubMessage1)
-
-                # Mirar qué tipo de window nos conviene más, sliding o sessions creo que encajan más para nuestro caso
-                # - Sliding: si una no hace match en una window, posibilidad en la siguiente
-                # - Sessions:si no llegasen mensajes en X tiempo, cerrar la window para no "retrasar" la llegada de la ayuda
-
-                | "Session Window for help data" >> beam.WindowInto(beam.window.Sessions(30))
+                | "Sliding Window for help data" >> beam.WindowInto(beam.window.SlidingWindows(30, 5))
         )
 
         volunteer_data = (
             p
                 | "Read volunteer data from PubSub" >> beam.io.ReadFromPubSub(subscription=args.volunteers_subscription)
                 | "Parse JSON volunteer messages" >> beam.Map(ParsePubSubMessage2)
-                | "Session Window for volunteer data" >> beam.WindowInto(beam.window.Sessions(30))
+                | "Sliding Window for volunteer data" >> beam.WindowInto(beam.window.SlidingWindows(30, 5))
         )
 
         # CoGroupByKey
         grouped_data = (volunteer_data, help_data) | "Merge PCollections" >> beam.CoGroupByKey()
 
         # Partitions: 1) category_grouped: a match by category has been found 2) category_not_grouped: category has not been matched.
-        
         category_grouped, category_not_grouped = (
             grouped_data | "Partition by volunteer found" >> beam.Partition(lambda kv, _: 0 if len(kv[1][0]) and len(kv[1][1]) > 0 else 1, 2)
         )
-        ######## No salen o tardan en salir las category_grouped, no sé si es cosa de la window también.
-
-        # category_grouped | "Debug category grouped data" >> beam.Map(lambda x: logging.info(f"Grouped data: {x}")) 
-        # category_not_grouped | "Debug not grouped data" >> beam.Map(lambda x: logging.info(f"Not grouped data: {x}")) 
 
         send_not_grouped = (
             category_not_grouped
-            | "Send not grouped messages to Firestore" >> beam.ParDo(FormatFirestoreDocument(mode='raw', firestore_collection=args.firestore_collection))
+            | "Send not grouped by category messages to Firestore" >> beam.ParDo(StoreFirestoreDocument(firestore_collection=args.firestore_collection))
         )
 
         # Filter by distance
