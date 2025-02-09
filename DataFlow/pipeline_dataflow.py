@@ -187,13 +187,13 @@ def run():
         )
 
         # Tag matched users and not matched users (by distance)
-        # tagged_data = (
-        #     category_grouped
-        #     | "Check match status" >> beam.ParDo(MatchedStatusDoFn()).with_outputs("matched_users", "not_matched_users")
-        # )
+        tagged_data = (
+            category_grouped
+            | "Check match status" >> beam.ParDo(MatchedStatusDoFn()).with_outputs("matched_users", "not_matched_users")
+        )
         
-        # tagged_data.matched_users | "Debug matched data" >> beam.Map(lambda x: logging.info(f"Matched data: {x}")) 
-        # tagged_data.not_matched_users | "Debug not matched data" >> beam.Map(lambda x: logging.info(f"Not matched data: {x}")) 
+        tagged_data.matched_users | "Debug matched data" >> beam.Map(lambda x: logging.info(f"Matched data: {x}")) 
+        tagged_data.not_matched_users | "Debug not matched data" >> beam.Map(lambda x: logging.info(f"Not matched data: {x}")) 
 
         # (
         #     tagged_data.matched_users
