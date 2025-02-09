@@ -1,7 +1,6 @@
 resource "google_cloud_run_v2_job" "job" {
-  name     = var.job_name
-  location = var.region
-
+  name                = var.job_name
+  location            = var.region
   deletion_protection = false
 
   template {
@@ -10,6 +9,11 @@ resource "google_cloud_run_v2_job" "job" {
       containers {
         image = var.image
 
+        env {
+          name  = "GCP_PROJECT_ID"
+          value = var.project_id
+        }
+        
         env {
           name  = "GENERATOR_TYPE"
           value = var.generator_type

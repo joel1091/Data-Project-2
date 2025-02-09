@@ -1,3 +1,10 @@
+module "artifact_registry" {
+  source         = "./modules/artifact_registry"
+  repository_id  = "data-project2"
+  location       = var.region
+  format         = "DOCKER"
+  description    = "Repositorio para imágenes Docker de Data Project 2"
+}
 
 module "pubsub_ayudantes" {
   source            = "./modules/pubsub"
@@ -36,8 +43,9 @@ module "sa_cloud_run" {
 module "cloud_run_automatic" {
   source                = "./modules/cloud_run"
   job_name              = "generadores-job-automatic"
-  image                 = "gcr.io/${var.project_id}/launcher-automatic:latest"
+  image                 = "europe-west1-docker.pkg.dev/${var.project_id}/${module.artifact_registry.repository_id}/launcher-automatic:latest"
   region                = var.region
+  project_id            = var.project_id
   generator_type        = "automatic"
   service_account_email = module.sa_cloud_run.email
 }
@@ -45,11 +53,13 @@ module "cloud_run_automatic" {
 module "cloud_run_manual" {
   source                = "./modules/cloud_run"
   job_name              = "generadores-job-manual"
-  image                 = "gcr.io/${var.project_id}/launcher-manual:latest"
+  image                 = "europe-west1-docker.pkg.dev/${var.project_id}/${module.artifact_registry.repository_id}/launcher-manual:latest"
   region                = var.region
+  project_id            = var.project_id
   generator_type        = "manual"
   service_account_email = module.sa_cloud_run.email
 }
+
 
 # module "dataflow_job" {
 #   source                = "./modules/dataflow"
