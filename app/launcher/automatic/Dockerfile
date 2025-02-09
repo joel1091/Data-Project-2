@@ -1,18 +1,15 @@
-# launcher/automatic/Dockerfile
+# Dockerfile para el launcher automático
 FROM python:3.10-slim
 
-# Establece el directorio de trabajo
+# Establece el directorio de trabajo en el contenedor
 WORKDIR /app
 
-# Copia el archivo de requerimientos y lo instala
-COPY ../../requirements.txt .
+# Copia el archivo de requerimientos e instala las dependencias
+COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copia los archivos de la aplicación
-COPY ../../ .
+# Copia todo el contenido de la carpeta actual (que es app/launcher/automatic) en /app
+COPY . .
 
-# Establece el directorio de trabajo 
-WORKDIR /app/launcher/automatic
-
-# Ejecuta el main para modo automático
+# Ejecuta el archivo main.py
 CMD ["python", "main.py"]
