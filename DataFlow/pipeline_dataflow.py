@@ -46,7 +46,7 @@ class StoreFirestoreDocument(beam.DoFn):
                     try:
                         doc_id = record.get('created_at', '')
                         if doc_id:
-                            db.collection(self.firestore_collection).document('not_matched').collection(event).document(doc_id).set(record)
+                            db.collection(self.firestore_collection).document('not_found').collection(event).document(doc_id).set(record)
                             # logging.info(f"Stored {event} record in Firestore")
                     except Exception as err:
                         logging.error(f"Error storing {event}: {err}")
@@ -189,22 +189,20 @@ def run():
             category_grouped
             | "Filter by distance" >> beam.ParDo(FilterbyDistance())
         )
-        
-        # Store matched by distance results to Firestore
-        matched_data = (
-            filtered_data
-            | "Store matched messages to Firestore" >> beam.ParDo()
-        )
 
-        processed_data = (
+        # Tag matched users and not matched users (by distance)
+        tagged_data = (
             filtered_data
             | "Check match status" >> beam.ParDo(MatchedStatusDoFn()).with_outputs("matched_users", "not_matched_users")
         )
+        
+        tagged_data.matched_users | "Debug matched data" >> beam.Map(lambda x: logging.info(f"Matched data: {x}")) 
+        tagged_data.not_matched_users | "Debug not matched data" >> beam.Map(lambda x: logging.info(f"Not matched data: {x}")) 
 
-        (
-            processed_data.matched_users
-                | "Write matched_users documents" >> beam.ParDo(FormatFirestoreocument(mode='raw', firestore_collection=args.firestore_collection))
-        )
+        # (
+        #     tagged_data.matched_users
+        #         | "Write matched_users documents" >> beam.ParDo("<FIRESTORE>")
+        # )
 
 
 if __name__ == '__main__':
