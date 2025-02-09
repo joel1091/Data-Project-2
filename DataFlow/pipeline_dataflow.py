@@ -68,7 +68,7 @@ class FilterbyDistance(beam.DoFn):
 
         return R * c  
     
-    # Filter by distance according to "radio_disponible_km"
+    # Filter by distance according to "radio_disponible_km" & tag not_matched_users and matched_users
     def process(self, element):
         category, (help_data, volunteer_data) = element
 
@@ -90,26 +90,12 @@ class FilterbyDistance(beam.DoFn):
                 
                 if distance <= radio_max:
                     yield data
-                    logging.info(f"Match found: {data}")  
+                    yield beam.pvalue.TaggedOutput("matched_users", data)
+                    # logging.info(f"Match found: {data}")  
+                else:
+                    yield beam.pvalue.TaggedOutput("not_matched_users", data)
+                    # logging.info(f"Match NOT found: {data}")  
 
-
-# MATCH STATUS
-class MatchedStatusDoFn(beam.DoFn):
-    def process(self, element):
-
-        category, (help_data, volunteer_data, distance) = element
-
-        matched_data = {
-            "category": category,
-            "request": help_data,
-            "volunteer": volunteer_data,
-            "distance": distance
-        }
-
-        if volunteer_data["categoria"] == help_data["etiqueta"] and distance <= volunteer_data["radio_disponible_km"]:
-            yield beam.pvalue.TaggedOutput("matched_users", matched_data)
-        else:
-            yield beam.pvalue.TaggedOutput("not_matched_users", matched_data)
 
 
 def run():
@@ -180,25 +166,16 @@ def run():
             | "Send not grouped by category messages to Firestore" >> beam.ParDo(StoreFirestoreDocument(firestore_collection=args.firestore_collection))
         )
 
-        # Partition 1: continues the Pipeline = Match by distance
+        # Partition 1: continues the Pipeline = Match by distance & Tagged Output
         filtered_data = ( 
             category_grouped
-            | "Filter by distance" >> beam.ParDo(FilterbyDistance())
+            | "Filter by distance" >> beam.ParDo(FilterbyDistance()).with_outputs("matched_users", "not_matched_users")
         )
 
-        # Tag matched users and not matched users (by distance)
-        tagged_data = (
-            category_grouped
-            | "Check match status" >> beam.ParDo(MatchedStatusDoFn()).with_outputs("matched_users", "not_matched_users")
+        (
+            filtered_data.matched_users
+                | "Write matched_users documents" >> beam.ParDo("<FIRESTORE>")
         )
-        
-        tagged_data.matched_users | "Debug matched data" >> beam.Map(lambda x: logging.info(f"Matched data: {x}")) 
-        tagged_data.not_matched_users | "Debug not matched data" >> beam.Map(lambda x: logging.info(f"Not matched data: {x}")) 
-
-        # (
-        #     tagged_data.matched_users
-        #         | "Write matched_users documents" >> beam.ParDo("<FIRESTORE>")
-        # )
 
 
 if __name__ == '__main__':
