@@ -56,7 +56,7 @@ class StoreFirestoreDocument(beam.DoFn):
 class FilterbyDistance(beam.DoFn):
 
     @staticmethod
-    # Calcular la distancia según las coordinadas
+    # Calculate distance based on coordinates
     def haversine(lat1, lon1, lat2, lon2):
         R = 6371  # Radio de la Tierra en km
         lat1, lon1, lat2, lon2 = map(math.radians, [lat1, lon1, lat2, lon2])
@@ -67,7 +67,7 @@ class FilterbyDistance(beam.DoFn):
 
         return R * c  
     
-    # Filtrar por distancia cumpliendo "radio_disponible_km"
+    # Filter by distance according to "radio_disponible_km"
     def process(self, element):
         category, (help_data, volunteer_data) = element
 
@@ -76,7 +76,7 @@ class FilterbyDistance(beam.DoFn):
             radio_max = volunteer.get('radio_disponible_km')
 
             if radio_max is None:
-                radio_max = 100
+                radio_max = 100 ## TBD
 
             for request in help_data:
                 lat_request, lon_request = map(float, request['ubicacion'].split(','))
@@ -91,24 +91,25 @@ class FilterbyDistance(beam.DoFn):
                     yield data
                     logging.info(f"Match found: {data}")  
 
+
 # MATCH STATUS
-# class MatchedStatusDoFn(beam.DoFn):
-#     def process(self, element):
-#         category, (help_data, volunteer_data) = element
+class MatchedStatusDoFn(beam.DoFn):
+    def process(self, element):
+        category, (help_data, volunteer_data) = element
         
-#         distance = help_data.get('distance')
+        distance = help_data.get('distance')
 
-#         matched_data = {
-#             "category": category,
-#             "volunteer": volunteer_data,
-#             "request": help_data,
-#             "distance": distance
-#         }
+        matched_data = {
+            "category": category,
+            "volunteer": volunteer_data,
+            "request": help_data,
+            "distance": distance
+        }
 
-#         if volunteer_data["categoria"] == help_data["etiqueta"] and distance <= volunteer_data["radio_disponible_km"]:
-#             yield beam.pvalue.TaggedOutput("matched_users", matched_data)
-#         else:
-#             yield beam.pvalue.TaggedOutput("not_matched_users", matched_data)
+        if volunteer_data["categoria"] == help_data["etiqueta"] and distance <= volunteer_data["radio_disponible_km"]:
+            yield beam.pvalue.TaggedOutput("matched_users", matched_data)
+        else:
+            yield beam.pvalue.TaggedOutput("not_matched_users", matched_data)
 
 
 def run():
@@ -177,34 +178,33 @@ def run():
             grouped_data | "Partition by volunteer found" >> beam.Partition(lambda kv, _: 0 if len(kv[1][0]) and len(kv[1][1]) > 0 else 1, 2)
         )
 
-        category_grouped | "Debug grouped data" >> beam.Map(lambda x: logging.info(f"Grouped data: {x}")) 
-
-        # Partition 2: not grouped by category = send to firestore
+        # Partition 2: not grouped by category = Send to Firestore
         send_not_grouped = (
             category_not_grouped
             | "Send not grouped by category messages to Firestore" >> beam.ParDo(StoreFirestoreDocument(firestore_collection=args.firestore_collection))
         )
-        # Partition 1: continues the Pipeline
-        # Match by distance
+
+        # Partition 1: continues the Pipeline = Match by distance
         filtered_data = ( 
             category_grouped
             | "Filter by distance" >> beam.ParDo(FilterbyDistance())
         )
         
-        # processed_data = (
-        #     filtered_data
-        #     | "Check match status" >> beam.ParDo(MatchedStatusDoFn()).with_outputs("matched_users", "not_matched_users")
-        # )
-        # (
-        #     processed_data.matched_users
-        #         | "Write matched_users documents" >> beam.ParDo(FormatFirestoreocument(mode='raw', firestore_collection=args.firestore_collection))
-        # )
+        # Store matched by distance results to Firestore
+        matched_data = (
+            filtered_data
+            | "Store matched messages to Firestore" >> beam.ParDo()
+        )
 
-        # resend_data = (
-        #     processed_data.not_matched_users
-        #         | 
-        # )
+        processed_data = (
+            filtered_data
+            | "Check match status" >> beam.ParDo(MatchedStatusDoFn()).with_outputs("matched_users", "not_matched_users")
+        )
 
+        (
+            processed_data.matched_users
+                | "Write matched_users documents" >> beam.ParDo(FormatFirestoreocument(mode='raw', firestore_collection=args.firestore_collection))
+        )
 
 
 if __name__ == '__main__':
