@@ -36,8 +36,8 @@ class StoreFirestoreDocument(beam.DoFn):
 
     def process(self, element):
         db = firestore.Client()
-        events = ['volunteer', 'request']
-        category, (volunteer_data, request_data) = element
+        events = ['request', 'volunteer']
+        category, (request_data, volunteer_data) = element
 
         for event in events:
             data_list = volunteer_data if event == 'volunteer' else request_data
@@ -90,7 +90,7 @@ class FilterbyDistance(beam.DoFn):
                 
                 if distance <= radio_max:
                     yield data
-                    # logging.info(f"Match found: {data}")  
+                    logging.info(f"Match found: {data}")  
 
 
 # MATCH STATUS
@@ -187,13 +187,13 @@ def run():
         )
 
         # Tag matched users and not matched users (by distance)
-        tagged_data = (
-            category_grouped
-            | "Check match status" >> beam.ParDo(MatchedStatusDoFn()).with_outputs("matched_users", "not_matched_users")
-        )
+        # tagged_data = (
+        #     category_grouped
+        #     | "Check match status" >> beam.ParDo(MatchedStatusDoFn()).with_outputs("matched_users", "not_matched_users")
+        # )
         
-        tagged_data.matched_users | "Debug matched data" >> beam.Map(lambda x: logging.info(f"Matched data: {x}")) 
-        tagged_data.not_matched_users | "Debug not matched data" >> beam.Map(lambda x: logging.info(f"Not matched data: {x}")) 
+        # tagged_data.matched_users | "Debug matched data" >> beam.Map(lambda x: logging.info(f"Matched data: {x}")) 
+        # tagged_data.not_matched_users | "Debug not matched data" >> beam.Map(lambda x: logging.info(f"Not matched data: {x}")) 
 
         # (
         #     tagged_data.matched_users
