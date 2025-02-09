@@ -14,13 +14,13 @@ import math
 
 # Decode messages from Pub/Sub
 ### !!! en ambos generadores, el campo no se llama igual, en uno categoria y en otro etiqueta, para facitarlo, cambiarlo?
-#necesitados
+## necesitados
 def ParsePubSubMessage1(message):
     pubsub_message = message.decode('utf-8')
     msg = json.loads(pubsub_message)
 
     return msg['etiqueta'], msg
-#ayudantes
+## ayudantes
 def ParsePubSubMessage2(message):
     pubsub_message = message.decode('utf-8')
     msg = json.loads(pubsub_message)
@@ -28,8 +28,8 @@ def ParsePubSubMessage2(message):
     return msg['categoria'], msg
 
 
-# Store in Firestore
-class StoreFirestoreDocument(beam.DoFn):
+# Store in Firestore the messages that have not been matched by category
+class StoreFirestoreNotMatched(beam.DoFn):
 
     def __init__(self,firestore_collection):
         self.firestore_collection = firestore_collection
@@ -91,10 +91,28 @@ class FilterbyDistance(beam.DoFn):
                 if distance <= radio_max:
                     yield data
                     yield beam.pvalue.TaggedOutput("matched_users", data)
-                    # logging.info(f"Match found: {data}")  
+                    logging.info(f"Match found: {data}")  
                 else:
                     yield beam.pvalue.TaggedOutput("not_matched_users", data)
-                    # logging.info(f"Match NOT found: {data}")  
+                    logging.info(f"Match NOT found: {data}")  
+
+# Store in Firestore matched users
+class StoreFirestoreMatchedUsers(beam.DoFn):
+
+    def __init__(self,firestore_collection):
+        self.firestore_collection = firestore_collection
+
+    def process(self, element):
+        db = firestore.Client()
+        category, matched_data = element
+
+        try:
+            doc_id = matched_data["request"]["created_at"]
+            if doc_id:
+                db.collection(self.firestore_collection).document("matched_requests").collection(category).document(doc_id).set(matched_data)
+                # logging.info(f"Stored matched user in Firestore")
+        except Exception as err:
+            logging.error(f"Error storing matched user: {err}")
 
 
 
@@ -157,13 +175,13 @@ def run():
 
         # Partitions: 1) category_grouped: a match by category has been found 2) category_not_grouped: category has not been matched.
         category_grouped, category_not_grouped = (
-            grouped_data | "Partition by volunteer found" >> beam.Partition(lambda kv, _: 0 if len(kv[1][0]) and len(kv[1][1]) > 0 else 1, 2)
+            grouped_data | "Partition by volunteer found" >> beam.Partition(lambda kv, _: 0 if len(kv[1][0]) and len(kv[1][1]) > 0 else 1, 2) # 2 = number of partitions
         )
 
         # Partition 2: not grouped by category = Send to Firestore
         send_not_grouped = (
             category_not_grouped
-            | "Send not grouped by category messages to Firestore" >> beam.ParDo(StoreFirestoreDocument(firestore_collection=args.firestore_collection))
+            | "Send not grouped by category messages to Firestore" >> beam.ParDo(StoreFirestoreNotMatched(firestore_collection=args.firestore_collection))
         )
 
         # Partition 1: continues the Pipeline = Match by distance & Tagged Output
@@ -174,8 +192,13 @@ def run():
 
         (
             filtered_data.matched_users
-                | "Write matched_users documents" >> beam.ParDo("<FIRESTORE>")
+                | "Write matched_users documents" >> beam.ParDo(StoreFirestoreMatchedUsers(firestore_collection=args.firestore_collection))
         )
+
+        # (
+        #     filtered_data.not_matched_users
+        #         | "<...>" >> beam.ParDo()
+        # )
 
 
 if __name__ == '__main__':
