@@ -90,26 +90,23 @@ class FilterbyDistance(beam.DoFn):
                 
                 if distance <= radio_max:
                     yield data
-                    logging.info(f"Match found: {data}")  
+                    # logging.info(f"Match found: {data}")  
 
 
 # MATCH STATUS
 class MatchedStatusDoFn(beam.DoFn):
     def process(self, element):
-        category, data = element
 
-        volunteer_data = data.get('volunteer')
-        request_data = data.get('request')
-        distance = data.get('distance')
+        category, (help_data, volunteer_data, distance) = element
 
         matched_data = {
             "category": category,
+            "request": help_data,
             "volunteer": volunteer_data,
-            "request": request_data,
             "distance": distance
         }
 
-        if volunteer_data["categoria"] == request_data["etiqueta"] and distance <= volunteer_data["radio_disponible_km"]:
+        if volunteer_data["categoria"] == help_data["etiqueta"] and distance <= volunteer_data["radio_disponible_km"]:
             yield beam.pvalue.TaggedOutput("matched_users", matched_data)
         else:
             yield beam.pvalue.TaggedOutput("not_matched_users", matched_data)
@@ -191,7 +188,7 @@ def run():
 
         # Tag matched users and not matched users (by distance)
         tagged_data = (
-            filtered_data
+            category_grouped
             | "Check match status" >> beam.ParDo(MatchedStatusDoFn()).with_outputs("matched_users", "not_matched_users")
         )
         
