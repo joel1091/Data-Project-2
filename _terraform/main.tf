@@ -43,7 +43,7 @@ module "sa_cloud_run" {
 module "cloud_run_automatic" {
   source                = "./modules/cloud_run"
   job_name              = "generadores-job-automatic"
-  image                 = "europe-west1-docker.pkg.dev/${var.project_id}/${module.artifact_registry.repository_id}/launcher-automatic:latest"
+  image                 = "europe-west1-docker.pkg.dev/${var.project_id}/${module.artifact_registry.repository_id}/launcher-automatic:v1"
   region                = var.region
   project_id            = var.project_id
   generator_type        = "automatic"
@@ -53,7 +53,7 @@ module "cloud_run_automatic" {
 module "cloud_run_manual" {
   source                = "./modules/cloud_run"
   job_name              = "generadores-job-manual"
-  image                 = "europe-west1-docker.pkg.dev/${var.project_id}/${module.artifact_registry.repository_id}/launcher-manual:latest"
+  image                 = "europe-west1-docker.pkg.dev/${var.project_id}/${module.artifact_registry.repository_id}/launcher-manual:v1"
   region                = var.region
   project_id            = var.project_id
   generator_type        = "manual"
