@@ -189,7 +189,8 @@ def run():
             category_grouped
             | "Filter by distance" >> beam.ParDo(FilterbyDistance()).with_outputs("matched_users", "not_matched_users")
         )
-
+        
+        # Store matched users to Firestore
         (
             filtered_data.matched_users
                 | "Write matched_users documents" >> beam.ParDo(StoreFirestoreMatchedUsers(firestore_collection=args.firestore_collection))
