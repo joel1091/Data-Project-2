@@ -14,12 +14,13 @@ import math
 
 # Decode messages from Pub/Sub
 ### !!! en ambos generadores, el campo no se llama igual, en uno categoria y en otro etiqueta, para facitarlo, cambiarlo?
+#necesitados
 def ParsePubSubMessage1(message):
     pubsub_message = message.decode('utf-8')
     msg = json.loads(pubsub_message)
 
     return msg['etiqueta'], msg
-
+#ayudantes
 def ParsePubSubMessage2(message):
     pubsub_message = message.decode('utf-8')
     msg = json.loads(pubsub_message)
@@ -82,8 +83,8 @@ class FilterbyDistance(beam.DoFn):
                 lat_request, lon_request = map(float, request['ubicacion'].split(','))
                 distance = self.haversine(lat_volunteer, lon_volunteer, lat_request, lon_request)
                 
-                data = (category, {"volunteer": volunteer,
-                                    "request": request,
+                data = (category, {"request": request,
+                                    "volunteer": volunteer,
                                     "distance": distance
                                     })
                 
@@ -95,18 +96,20 @@ class FilterbyDistance(beam.DoFn):
 # MATCH STATUS
 class MatchedStatusDoFn(beam.DoFn):
     def process(self, element):
-        category, (help_data, volunteer_data) = element
-        
-        distance = help_data.get('distance')
+        category, data = element
+
+        volunteer_data = data.get('volunteer')
+        request_data = data.get('request')
+        distance = data.get('distance')
 
         matched_data = {
             "category": category,
             "volunteer": volunteer_data,
-            "request": help_data,
+            "request": request_data,
             "distance": distance
         }
 
-        if volunteer_data["categoria"] == help_data["etiqueta"] and distance <= volunteer_data["radio_disponible_km"]:
+        if volunteer_data["categoria"] == request_data["etiqueta"] and distance <= volunteer_data["radio_disponible_km"]:
             yield beam.pvalue.TaggedOutput("matched_users", matched_data)
         else:
             yield beam.pvalue.TaggedOutput("not_matched_users", matched_data)
@@ -141,10 +144,6 @@ def run():
     #             required=True,
     #             help='PubSub Topic for sending push notifications.')
     
-    # parser.add_argument(
-    #             '--system_id',
-    #             required=False,
-    #             help='System that evaluates the telemetry data of the car.')
 
     args, pipeline_opts = parser.parse_known_args()
 
@@ -160,18 +159,18 @@ def run():
             p
                 | "Read help data from PubSub" >> beam.io.ReadFromPubSub(subscription=args.help_subscription)
                 | "Parse JSON help messages" >> beam.Map(ParsePubSubMessage1)
-                | "Sliding Window for help data" >> beam.WindowInto(beam.window.SlidingWindows(30, 5))
+                | "Sliding Window for help data" >> beam.WindowInto(beam.window.SlidingWindows(30, 5)) ## timing TBD
         )
 
         volunteer_data = (
             p
                 | "Read volunteer data from PubSub" >> beam.io.ReadFromPubSub(subscription=args.volunteers_subscription)
                 | "Parse JSON volunteer messages" >> beam.Map(ParsePubSubMessage2)
-                | "Sliding Window for volunteer data" >> beam.WindowInto(beam.window.SlidingWindows(30, 5))
+                | "Sliding Window for volunteer data" >> beam.WindowInto(beam.window.SlidingWindows(30, 5)) ## timing TBD
         )
 
         # CoGroupByKey
-        grouped_data = (volunteer_data, help_data) | "Merge PCollections" >> beam.CoGroupByKey()
+        grouped_data = (help_data, volunteer_data) | "Merge PCollections" >> beam.CoGroupByKey()
 
         # Partitions: 1) category_grouped: a match by category has been found 2) category_not_grouped: category has not been matched.
         category_grouped, category_not_grouped = (
