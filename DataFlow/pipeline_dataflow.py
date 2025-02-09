@@ -184,12 +184,12 @@ def run():
         category_grouped, category_not_grouped = (
             grouped_data | "Partition by volunteer found" >> beam.Partition(lambda kv, _: 0 if len(kv[1][0]) and len(kv[1][1]) > 0 else 1, 2)
         )
-
+        # Partition 2: not grouped by category = send to firestore
         send_not_grouped = (
             category_not_grouped
             | "Send not grouped by category messages to Firestore" >> beam.ParDo(StoreFirestoreDocument(firestore_collection=args.firestore_collection))
         )
-
+        # Partition 1: continues the Pipeline
         # Filter by distance
         # filtered_data = ( 
         #     category_grouped
