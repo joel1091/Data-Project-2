@@ -34,6 +34,7 @@ def RemoveDistance(data_list):
     return data_list
 
 # Store in Firestore the messages that have not been matched by category
+# Reused for the not matched by distance
 class StoreFirestoreNotMatched(beam.DoFn):
 
     def __init__(self,firestore_collection):
@@ -96,10 +97,11 @@ class FilterbyDistance(beam.DoFn):
                 if distance <= radio_max:
                     yield data
                     yield beam.pvalue.TaggedOutput("matched_users", data)
-                    logging.info(f"Match found: {data}")  
+                    # logging.info(f"Match found: {data}")  
                 else:
                     yield beam.pvalue.TaggedOutput("not_matched_users", data)
-                    logging.info(f"Match NOT found: {data}")  
+                    # logging.info(f"Match NOT found: {data}")  
+
 
 # Store in Firestore matched users
 class StoreFirestoreMatchedUsers(beam.DoFn):
@@ -115,7 +117,7 @@ class StoreFirestoreMatchedUsers(beam.DoFn):
             doc_id = matched_data["request"]["created_at"]
             if doc_id:
                 db.collection(self.firestore_collection).document("matched_requests").collection(category).document(doc_id).set(matched_data)
-                # logging.info(f"Stored matched user in Firestore")
+                logging.info(f"Stored matched user in Firestore")
         except Exception as err:
             logging.error(f"Error storing matched user: {err}")
 
@@ -165,14 +167,14 @@ def run():
             p
                 | "Read help data from PubSub" >> beam.io.ReadFromPubSub(subscription=args.help_subscription)
                 | "Parse JSON help messages" >> beam.Map(ParsePubSubMessage1)
-                | "Sliding Window for help data" >> beam.WindowInto(beam.window.SlidingWindows(30, 5)) ## timing TBD
+                | "Sliding Window for help data" >> beam.WindowInto(beam.window.SlidingWindows(60, 5)) ## timing TBD
         )
 
         volunteer_data = (
             p
                 | "Read volunteer data from PubSub" >> beam.io.ReadFromPubSub(subscription=args.volunteers_subscription)
                 | "Parse JSON volunteer messages" >> beam.Map(ParsePubSubMessage2)
-                | "Sliding Window for volunteer data" >> beam.WindowInto(beam.window.SlidingWindows(30, 5)) ## timing TBD
+                | "Sliding Window for volunteer data" >> beam.WindowInto(beam.window.SlidingWindows(60, 5)) ## timing TBD
         )
 
         # CoGroupByKey
@@ -182,7 +184,7 @@ def run():
         category_grouped, category_not_grouped = (
             grouped_data | "Partition by volunteer found" >> beam.Partition(lambda kv, _: 0 if len(kv[1][0]) and len(kv[1][1]) > 0 else 1, 2) # 2 = number of partitions
         )
-
+        
         # Partition 2: not grouped by category = Send to Firestore
         send_not_grouped = (
             category_not_grouped
@@ -201,14 +203,16 @@ def run():
                 | "Write matched_users documents" >> beam.ParDo(StoreFirestoreMatchedUsers(firestore_collection=args.firestore_collection))
         )
         
-        # Return data to original state (after cogrouped) to store in Firestore and enable reprocessing
+        # Separate data to store in Firestore and enable reprocessing
         reprocess_data = (
             filtered_data.not_matched_users
                 | "Remove distance" >> beam.Map(RemoveDistance)
+                | "Separate help and volunteer" >> beam.FlatMap(lambda z: [
+                    (z[0], ([z[1].get('request', {})], [])),
+                    (z[0], ([], [z[1].get('volunteer', {})]))
+                ])
                 | "Store in Firestore to reprocess" >> beam.ParDo(StoreFirestoreNotMatched(firestore_collection=args.firestore_collection))
         )
-        reprocess_data | "Debug reprocessed data" >> beam.Map(lambda x: logging.info(f"Data reprocessed and stored: {x}")) 
-
 
 
 
