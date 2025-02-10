@@ -14,22 +14,28 @@ import math
 
 # Decode messages from Pub/Sub
 ### !!! en ambos generadores, el campo no se llama igual, en uno categoria y en otro etiqueta, para facitarlo, cambiarlo?
-#necesitados
+## necesitados
 def ParsePubSubMessage1(message):
     pubsub_message = message.decode('utf-8')
     msg = json.loads(pubsub_message)
 
     return msg['etiqueta'], msg
-#ayudantes
+## ayudantes
 def ParsePubSubMessage2(message):
     pubsub_message = message.decode('utf-8')
     msg = json.loads(pubsub_message)
 
     return msg['categoria'], msg
 
+def RemoveDistance(data_list):
+    for record in data_list:
+        if 'distance' in record:
+            del record['distance']
+    return data_list
 
-# Store in Firestore
-class StoreFirestoreDocument(beam.DoFn):
+# Store in Firestore the messages that have not been matched by category
+# Reused for the not matched by distance
+class StoreFirestoreNotMatched(beam.DoFn):
 
     def __init__(self,firestore_collection):
         self.firestore_collection = firestore_collection
@@ -37,10 +43,10 @@ class StoreFirestoreDocument(beam.DoFn):
     def process(self, element):
         db = firestore.Client()
         events = ['request', 'volunteer']
-        category, (request_data, volunteer_data) = element
+        category, (help_data, volunteer_data) = element
 
         for event in events:
-            data_list = volunteer_data if event == 'volunteer' else request_data
+            data_list = volunteer_data if event == 'volunteer' else help_data
 
             if data_list:
                 for record in data_list:
@@ -68,7 +74,7 @@ class FilterbyDistance(beam.DoFn):
 
         return R * c  
     
-    # Filter by distance according to "radio_disponible_km"
+    # Filter by distance according to "radio_disponible_km" & tag not_matched_users and matched_users
     def process(self, element):
         category, (help_data, volunteer_data) = element
 
@@ -90,26 +96,31 @@ class FilterbyDistance(beam.DoFn):
                 
                 if distance <= radio_max:
                     yield data
-                    logging.info(f"Match found: {data}")  
+                    yield beam.pvalue.TaggedOutput("matched_users", data)
+                    # logging.info(f"Match found: {data}")  
+                else:
+                    yield beam.pvalue.TaggedOutput("not_matched_users", data)
+                    # logging.info(f"Match NOT found: {data}")  
 
 
-# MATCH STATUS
-class MatchedStatusDoFn(beam.DoFn):
+# Store in Firestore matched users
+class StoreFirestoreMatchedUsers(beam.DoFn):
+
+    def __init__(self,firestore_collection):
+        self.firestore_collection = firestore_collection
+
     def process(self, element):
+        db = firestore.Client()
+        category, matched_data = element
 
-        category, (help_data, volunteer_data, distance) = element
+        try:
+            doc_id = matched_data["request"]["created_at"]
+            if doc_id:
+                db.collection(self.firestore_collection).document("matched_requests").collection(category).document(doc_id).set(matched_data)
+                logging.info(f"Stored matched user in Firestore")
+        except Exception as err:
+            logging.error(f"Error storing matched user: {err}")
 
-        matched_data = {
-            "category": category,
-            "request": help_data,
-            "volunteer": volunteer_data,
-            "distance": distance
-        }
-
-        if volunteer_data["categoria"] == help_data["etiqueta"] and distance <= volunteer_data["radio_disponible_km"]:
-            yield beam.pvalue.TaggedOutput("matched_users", matched_data)
-        else:
-            yield beam.pvalue.TaggedOutput("not_matched_users", matched_data)
 
 
 def run():
@@ -156,14 +167,14 @@ def run():
             p
                 | "Read help data from PubSub" >> beam.io.ReadFromPubSub(subscription=args.help_subscription)
                 | "Parse JSON help messages" >> beam.Map(ParsePubSubMessage1)
-                | "Sliding Window for help data" >> beam.WindowInto(beam.window.SlidingWindows(30, 5)) ## timing TBD
+                | "Sliding Window for help data" >> beam.WindowInto(beam.window.SlidingWindows(60, 5)) ## timing TBD
         )
 
         volunteer_data = (
             p
                 | "Read volunteer data from PubSub" >> beam.io.ReadFromPubSub(subscription=args.volunteers_subscription)
                 | "Parse JSON volunteer messages" >> beam.Map(ParsePubSubMessage2)
-                | "Sliding Window for volunteer data" >> beam.WindowInto(beam.window.SlidingWindows(30, 5)) ## timing TBD
+                | "Sliding Window for volunteer data" >> beam.WindowInto(beam.window.SlidingWindows(60, 5)) ## timing TBD
         )
 
         # CoGroupByKey
@@ -171,34 +182,38 @@ def run():
 
         # Partitions: 1) category_grouped: a match by category has been found 2) category_not_grouped: category has not been matched.
         category_grouped, category_not_grouped = (
-            grouped_data | "Partition by volunteer found" >> beam.Partition(lambda kv, _: 0 if len(kv[1][0]) and len(kv[1][1]) > 0 else 1, 2)
+            grouped_data | "Partition by volunteer found" >> beam.Partition(lambda kv, _: 0 if len(kv[1][0]) and len(kv[1][1]) > 0 else 1, 2) # 2 = number of partitions
         )
-
+        
         # Partition 2: not grouped by category = Send to Firestore
         send_not_grouped = (
             category_not_grouped
-            | "Send not grouped by category messages to Firestore" >> beam.ParDo(StoreFirestoreDocument(firestore_collection=args.firestore_collection))
+            | "Send not grouped by category messages to Firestore" >> beam.ParDo(StoreFirestoreNotMatched(firestore_collection=args.firestore_collection))
         )
 
-        # Partition 1: continues the Pipeline = Match by distance
+        # Partition 1: continues the Pipeline = Match by distance & Tagged Output
         filtered_data = ( 
             category_grouped
-            | "Filter by distance" >> beam.ParDo(FilterbyDistance())
-        )
-
-        # Tag matched users and not matched users (by distance)
-        tagged_data = (
-            category_grouped
-            | "Check match status" >> beam.ParDo(MatchedStatusDoFn()).with_outputs("matched_users", "not_matched_users")
+            | "Filter by distance" >> beam.ParDo(FilterbyDistance()).with_outputs("matched_users", "not_matched_users")
         )
         
-        tagged_data.matched_users | "Debug matched data" >> beam.Map(lambda x: logging.info(f"Matched data: {x}")) 
-        tagged_data.not_matched_users | "Debug not matched data" >> beam.Map(lambda x: logging.info(f"Not matched data: {x}")) 
+        # Store matched users to Firestore
+        (
+            filtered_data.matched_users
+                | "Write matched_users documents" >> beam.ParDo(StoreFirestoreMatchedUsers(firestore_collection=args.firestore_collection))
+        )
+        
+        # Separate data to store in Firestore and enable reprocessing
+        reprocess_data = (
+            filtered_data.not_matched_users
+                | "Remove distance" >> beam.Map(RemoveDistance)
+                | "Separate help and volunteer" >> beam.FlatMap(lambda z: [
+                    (z[0], ([z[1].get('request', {})], [])),
+                    (z[0], ([], [z[1].get('volunteer', {})]))
+                ])
+                | "Store in Firestore to reprocess" >> beam.ParDo(StoreFirestoreNotMatched(firestore_collection=args.firestore_collection))
+        )
 
-        # (
-        #     tagged_data.matched_users
-        #         | "Write matched_users documents" >> beam.ParDo("<FIRESTORE>")
-        # )
 
 
 if __name__ == '__main__':
