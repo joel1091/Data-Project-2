@@ -27,6 +27,11 @@ def ParsePubSubMessage2(message):
 
     return msg['categoria'], msg
 
+def RemoveDistance(data_list):
+    for record in data_list:
+        if 'distance' in record:
+            del record['distance']
+    return data_list
 
 # Store in Firestore the messages that have not been matched by category
 class StoreFirestoreNotMatched(beam.DoFn):
@@ -37,10 +42,10 @@ class StoreFirestoreNotMatched(beam.DoFn):
     def process(self, element):
         db = firestore.Client()
         events = ['request', 'volunteer']
-        category, (request_data, volunteer_data) = element
+        category, (help_data, volunteer_data) = element
 
         for event in events:
-            data_list = volunteer_data if event == 'volunteer' else request_data
+            data_list = volunteer_data if event == 'volunteer' else help_data
 
             if data_list:
                 for record in data_list:
@@ -195,11 +200,16 @@ def run():
             filtered_data.matched_users
                 | "Write matched_users documents" >> beam.ParDo(StoreFirestoreMatchedUsers(firestore_collection=args.firestore_collection))
         )
+        
+        # Return data to original state (after cogrouped) to store in Firestore and enable reprocessing
+        reprocess_data = (
+            filtered_data.not_matched_users
+                | "Remove distance" >> beam.Map(RemoveDistance)
+                | "Store in Firestore to reprocess" >> beam.ParDo(StoreFirestoreNotMatched(firestore_collection=args.firestore_collection))
+        )
+        reprocess_data | "Debug reprocessed data" >> beam.Map(lambda x: logging.info(f"Data reprocessed and stored: {x}")) 
 
-        # (
-        #     filtered_data.not_matched_users
-        #         | "<...>" >> beam.ParDo()
-        # )
+
 
 
 if __name__ == '__main__':
