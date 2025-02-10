@@ -68,7 +68,7 @@ if st.button("Enviar Solicitud"):
             'nombre': nombre,
             'ubicacion': f"{latitud},{longitud}",
             'poblacion': poblacion,
-            'etiqueta': etiqueta,
+            'categoria': etiqueta,
             'descripcion': descripcion,
             'created_at': created_at,
             'nivel_urgencia': nivel_urgencia,
