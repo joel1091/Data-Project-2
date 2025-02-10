@@ -11,6 +11,14 @@ provider "google" {
 }
 
 terraform {
+  backend "gcs" {
+    bucket = "terraform-bucket-dataproject-2425-abc"
+    prefix = "terraform/state"
+  }
+}
+
+
+terraform {
   required_version = ">= 1.3.0"
 
   required_providers {
