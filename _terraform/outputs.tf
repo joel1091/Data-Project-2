@@ -33,3 +33,11 @@ output "sa_cloud_run_email" {
 # output "sa_dataflow_email" {
 #   value = module.sa_dataflow.email
 # }
+
+output "cloudbuild_launcher_automatic_build_id" {
+  value = module.cloudbuild_launcher_automatic.build_id
+}
+
+output "cloudbuild_launcher_manual_build_id" {
+  value = module.cloudbuild_launcher_manual.build_id
+}

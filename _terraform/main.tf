@@ -6,6 +6,13 @@ module "artifact_registry" {
   description    = "Repositorio para imágenes Docker de Data Project 2"
 }
 
+resource "google_storage_bucket" "build_bucket" {
+  name          = var.build_bucket
+  location      = var.region
+  force_destroy = true
+}
+
+
 module "pubsub_ayudantes" {
   source            = "./modules/pubsub"
   topic_name        = "ayudantes-events"
@@ -24,7 +31,7 @@ module "sa_cloud_run" {
   display_name = "Service Account for Cloud Run Job"
   project_id   = var.project_id
   roles        = [
-    "roles/pubsub.publisher"  
+    "roles/pubsub.publisher"
   ]
 }
 
@@ -34,9 +41,9 @@ module "sa_cloud_run" {
 #   display_name = "Service Account for Dataflow Job"
 #   project_id   = var.project_id
 #   roles        = [
-#     "roles/pubsub.subscriber",      # Permite suscribirse a Pub/Sub
-#     "roles/storage.objectViewer",   # Permite leer el template desde GCS
-#     "roles/datastore.user"          # Permite acceder a Firestore (modo Datastore)
+#     "roles/pubsub.subscriber",
+#     "roles/storage.objectViewer",
+#     "roles/datastore.user"
 #   ]
 # }
 
@@ -48,6 +55,8 @@ module "cloud_run_automatic" {
   project_id            = var.project_id
   generator_type        = "automatic"
   service_account_email = module.sa_cloud_run.email
+
+  depends_on = [ module.artifact_registry, module.cloudbuild_launcher_automatic ]
 }
 
 module "cloud_run_manual" {
@@ -58,6 +67,8 @@ module "cloud_run_manual" {
   project_id            = var.project_id
   generator_type        = "manual"
   service_account_email = module.sa_cloud_run.email
+
+  depends_on = [ module.artifact_registry, module.cloudbuild_launcher_manual ]
 }
 
 
@@ -70,7 +81,20 @@ module "cloud_run_manual" {
 #   parameters = {
 #     ayudantes_subscription   = "projects/${var.project_id}/subscriptions/${module.pubsub_ayudantes.subscription_id}"
 #     necesitados_subscription = "projects/${var.project_id}/subscriptions/${module.pubsub_necesitados.subscription_id}"
-#     # Otros parámetros necesarios para tu pipeline
 #   }
 #   service_account_email = module.sa_dataflow.email
 # }
+
+module "cloudbuild_launcher_automatic" {
+  source            = "./modules/cloudbuild_submit"
+  build_context_dir = "../app/launcher/automatic"
+  output_image      = "europe-west1-docker.pkg.dev/${var.project_id}/${module.artifact_registry.repository_id}/launcher-automatic:v1"
+  project_id        = var.project_id
+}
+
+module "cloudbuild_launcher_manual" {
+  source            = "./modules/cloudbuild_submit"
+  build_context_dir = "../app/launcher/manual"
+  output_image      = "europe-west1-docker.pkg.dev/${var.project_id}/${module.artifact_registry.repository_id}/launcher-manual:v1"
+  project_id        = var.project_id
+}
