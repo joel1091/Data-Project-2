@@ -2,3 +2,4 @@ requests
 google-cloud-pubsub
 python-dotenv
 geopy
+python-dotenv
