@@ -1,0 +1,7 @@
+project_id = "dataproject2425"
+region     = "europe-west1"
+zone       = "europe-west1-b"
+subnetwork = "projects/dataproject2425/regions/europe-west1/subnetworks/default"
+service_account_email = "dataproject2@dataproject2425.iam.gserviceaccount.com"
+build_bucket = "bucket-build-dataproject2425"
+# dataflow_template_gcs_path = "<path_to_dataflow_template>"
