@@ -5,8 +5,10 @@ FROM python:3.9-slim
 WORKDIR /app
 
 # Copiar el archivo de requerimientos y el script de la aplicación
-COPY requirements.txt .
+COPY app.py .
+COPY ofrecer_ayuda.py .
 COPY pedir_ayuda.py .
+COPY requirements.txt .
 
 # Instalar las dependencias
 RUN pip install --no-cache-dir -r requirements.txt
@@ -15,4 +17,4 @@ RUN pip install --no-cache-dir -r requirements.txt
 EXPOSE 8501
 
 # Comando para ejecutar la aplicación
-CMD ["streamlit", "run", "pedir_ayuda.py", "--server.port", "8501", "--server.enableCORS", "false", "--browser.serverAddress", "0.0.0.0"]
+CMD ["streamlit", "run", "app.py", "--server.port", "8501", "--server.enableCORS", "false", "--browser.serverAddress", "0.0.0.0"]
