@@ -1,77 +1,77 @@
 import streamlit as st
+import ofrecer_ayuda
+import pedir_ayuda
 
-# Función para aplicar estilos CSS personalizados
+# la función st.button no permite cambiar el formato de los button (predeterminado)
 def aplicar_estilos():
     st.markdown(
         """
         <style>
-        .boton-panel {
-            display: inline-block;
-            width: 45%;
-            height: 200px;
-            margin: 2%;
-            color: white;
-            font-size: 24px;
+        /* Contenedor de los botones */
+        .stButton > button {
+            width: 100%;
+            height: 100px;
+            font-size: 22px;
             font-weight: bold;
-            text-align: center;
-            line-height: 200px;
             border-radius: 10px;
-            cursor: pointer;
-            text-decoration: none;
+            border: none;
+            transition: background-color 0.3s;
         }
-        .boton-ayudar {
-            background-color: rgba(0, 128, 0, 0.7); /* Verde transparente */
+
+        /* Botón de Ofrecer Ayuda */
+        .stButton > button.ofrecer {
+            background-color: #28a745; /* Verde */
+            color: white;
         }
-        .boton-pedir {
-            background-color: rgba(255, 0, 0, 0.7); /* Rojo transparente */
+        .stButton > button.ofrecer:hover {
+            background-color: #218838; /* Verde más oscuro */
         }
-        .boton-panel:hover {
-            opacity: 0.9;
+
+        /* Botón de Pedir Ayuda */
+        .stButton > button.pedir {
+            background-color: #dc3545; /* Rojo */
+            color: white;
+        }
+        .stButton > button.pedir:hover {
+            background-color: #c82333; /* Rojo más oscuro */
         }
         </style>
         """,
         unsafe_allow_html=True
     )
 
-
 aplicar_estilos()
+
 
 # Inicializar el estado de la sesión para la navegación
 if 'pagina' not in st.session_state:
     st.session_state.pagina = 'inicio'
 
-# Funciones para manejar la navegación
-def mostrar_inicio():
-    st.title("Bienvenido a la Plataforma de Ayuda")
-    st.markdown(
-        """
-        <a href="#" class="boton-panel boton-ayudar" onclick="window.location.href = '?pagina=ayudar';">OFRECER AYUDA</a>
-        <a href="#" class="boton-panel boton-pedir" onclick="window.location.href = '?pagina=pedir';">PEDIR AYUDA</a>
-        """,
-        unsafe_allow_html=True
-    )
+def ir_a_ayudar():
+    st.session_state.pagina = 'ayudar'
+    st.rerun()
 
-def mostrar_ayudar():
-    st.title("Formulario para Ofrecer Ayuda")
-    st.write("Gracias por ofrecer tu ayuda. Por favor, completa la siguiente información.")
-    if st.button("Volver al inicio"):
-        st.session_state.pagina = 'inicio'
+def ir_a_pedir():
+    st.session_state.pagina = 'pedir'
+    st.rerun()
 
-def mostrar_pedir():
-    st.title("Formulario para Pedir Ayuda")
-    st.write("Estamos aquí para ayudarte. Por favor, completa la siguiente información.")
-    if st.button("Volver al inicio"):
-        st.session_state.pagina = 'inicio'
-
-# Lógica de navegación
 if st.session_state.pagina == 'inicio':
-    mostrar_inicio()
-elif st.session_state.pagina == 'ayudar':
-    mostrar_ayudar()
-elif st.session_state.pagina == 'pedir':
-    mostrar_pedir()
+    st.title("Bienvenido a la Plataforma de Ayuda")
 
-# Manejar la navegación basada en la URL
-query_params = st.experimental_get_query_params()
-if 'pagina' in query_params:
-    st.session_state.pagina = query_params['pagina'][0]
+    col1, col2 = st.columns(2)
+
+    with col1:
+        if st.button("🟢 OFRECER AYUDA", key="ofrecer", help="Haz doble clic para ofrecer ayuda", use_container_width=True):
+            st.session_state.pagina = "ayudar"
+
+    with col2:
+        if st.button("🔴 PEDIR AYUDA", key="pedir", help="Haz doble clic para pedir ayuda", use_container_width=True):
+            st.session_state.pagina = "pedir"
+
+elif st.session_state.pagina == 'ayudar':
+    ofrecer_ayuda.mostrar()  
+
+elif st.session_state.pagina == 'pedir':
+    pedir_ayuda.mostrar()
+
+
