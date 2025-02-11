@@ -1,28 +1,28 @@
 import streamlit as st
-# from google.cloud import pubsub_v1
+from google.cloud import pubsub_v1
 import uuid
 from datetime import datetime
 import json
 import re
 
-# # Configuración de Pub/Sub
-# project_id = 'total-glider-447114-u4'
-# topic_id = 'ayudantes-events'  # Tópico de ayudantes
+# Configuración de Pub/Sub
+project_id = '<PROJECT_ID>'
+topic_id = 'ayudantes-events'  # Tópico de ayudantes
 
-# # Inicializar el cliente de Pub/Sub
-# publisher = pubsub_v1.PublisherClient()
-# topic_path = publisher.topic_path(project_id, topic_id)
+# Inicializar el cliente de Pub/Sub
+publisher = pubsub_v1.PublisherClient()
+topic_path = publisher.topic_path(project_id, topic_id)
 
-# # Función para enviar datos a Pub/Sub
-# def enviar_a_pubsub(data):
-#     try:
-#         data_json = json.dumps(data, ensure_ascii=False)
-#         data_bytes = data_json.encode('utf-8')
-#         future = publisher.publish(topic_path, data=data_bytes)
-#         future.result()  # Esperar a que se confirme la publicación
-#         st.success("Datos enviados correctamente.")
-#     except Exception as e:
-#         st.error(f"Error al enviar datos: {e}")
+# Función para enviar datos a Pub/Sub
+def enviar_a_pubsub(data):
+    try:
+        data_json = json.dumps(data, ensure_ascii=False)
+        data_bytes = data_json.encode('utf-8')
+        future = publisher.publish(topic_path, data=data_bytes)
+        future.result()  # Esperar a que se confirme la publicación
+        st.success("Datos enviados correctamente.")
+    except Exception as e:
+        st.error(f"Error al enviar datos: {e}")
 
 def mostrar():
     st.title("Formulario de Ofrecimiento de Ayuda")
@@ -64,7 +64,7 @@ def mostrar():
                 'created_at': created_at
             }
 
-            # enviar_a_pubsub(data)
+            enviar_a_pubsub(data)
         else:
             st.error("Por favor, complete todos los campos y asegúrese de seleccionar una categoría y un radio de disponibilidad.")
     
