@@ -24,39 +24,58 @@ def RemoveDistance(data_list):
         if 'distance' in record:
             del record['distance']
     return data_list
-
-def AddAttemptsToUnmatchedMessages(element):
-    if len(element) == 2: 
-        category, (help_data, volunteer_data) = element
-        attempts = 1
-    else:
-        category, (help_data, volunteer_data, attempts) = element
-        attempts += 1
     
-    if attempts >= 5:
-        print("El mensaje ha alcanzado 5 intentos")
-    ############################################### AÑADIR LÓGICA BIGQUERY
-
-    message_with_attempts = (category, (help_data, volunteer_data, attempts))
-    return message_with_attempts
-
 # Clean message before resending to PubSub
-def ConvertToBytes(message):
-    help_data = message[1][0] if message[1][0] else None
-    volunteer_data = message[1][1] if message[1][1] else None
+def ConvertToBytes(element):
     cleaned_message = {}
-
-    if help_data:
-        cleaned_message = {**cleaned_message, **help_data[0]}
-    if volunteer_data:
-        cleaned_message = {**cleaned_message, **volunteer_data[0]}
-    
-    attempts = message[1][2]
-    cleaned_message['attempts'] = attempts
-
+    if element:
+        for item in element:
+            item["attempts"] = item.get("attempts", 0)
+            cleaned_message = item
     message_bytes = json.dumps(cleaned_message).encode('utf-8')
     return message_bytes
 
+# Count Attempts
+class AddAttempts(beam.DoFn):
+
+    def increment_attempts(self, data):
+        for item in data:
+            item["attempts"] = item.get("attempts", 0) + 1
+        return data
+
+    def check_attempts(self, data):
+        for item in data:
+            if item["attempts"] >= 5:
+                print(f"El mensaje con id {item['id']} ha alcanzado 5 intentos.")
+                return None
+            # self.SendtoBigQuery(item)
+        return data
+
+    # def SendtoBigQuery(self, item):
+    #     print(f"Realizando una acción con el mensaje {item['id']}.")
+
+
+    def process(self, element):
+        category, (help_data, volunteer_data) = element
+    
+        if help_data:
+            help_data = self.increment_attempts(help_data)
+
+        if volunteer_data:
+            volunteer_data = self.increment_attempts(volunteer_data)
+        
+        if help_data:
+            help_data = self.check_attempts(help_data)
+        if volunteer_data:
+            help_data = self.check_attempts(help_data)
+##############
+        if help_data is None or volunteer_data is None:
+            return  
+###############
+        if help_data:
+            yield help_data
+        if volunteer_data:
+            yield volunteer_data
 
 # Filter by distance
 class FilterbyDistance(beam.DoFn):
@@ -108,17 +127,17 @@ class BigQuerySetup:
         self.dataset_id = dataset_id
         self.project_id = project_id
         self.dataset_ref = f"{project_id}.{dataset_id}"
-## -------------------------- CREARLO MEJOR EN TERRAFORM PARA LIMPIAR UN POCO LA PIPELINE?
-    # def create_dataset_if_not_exists(self):
-    #     """Crea el dataset si no existe."""
-    #     try:
-    #         dataset = bigquery.Dataset(f"{self.project_id}.{self.dataset_id}")
-    #         dataset.location = "EU"
-    #         self.client.create_dataset(dataset, exists_ok=True)
-    #         logging.info(f"Dataset {self.dataset_id} está listo")
-    #     except Exception as e:
-    #         logging.error(f"Error creando dataset: {e}")
-    #         raise
+
+    def create_dataset_if_not_exists(self):
+        """Crea el dataset si no existe."""
+        try:
+            dataset = bigquery.Dataset(f"{self.project_id}.{self.dataset_id}")
+            dataset.location = "EU"
+            self.client.create_dataset(dataset, exists_ok=True)
+            logging.info(f"Dataset {self.dataset_id} está listo")
+        except Exception as e:
+            logging.error(f"Error creando dataset: {e}")
+            raise
 
     def create_tables_if_not_exist(self):
         """Crea todas las tablas necesarias si no existen."""
@@ -311,7 +330,7 @@ def run():
 
 # BigQuery configuration
     bq_setup = BigQuerySetup(args.project_id, args.bigquery_dataset)
-    # bq_setup.create_dataset_if_not_exists()
+    bq_setup.create_dataset_if_not_exists()
     bq_setup.create_tables_if_not_exist()
 
 
@@ -344,26 +363,22 @@ def run():
         category_grouped, category_not_grouped = (
             grouped_data | "Partition by volunteer found" >> beam.Partition(lambda kv, _: 0 if len(kv[1][0]) and len(kv[1][1]) > 0 else 1, 2) # 2 = number of partitions
         )
-
-        # Partition 2: not grouped by category add attempts
-        resend_not_grouped = (
-        category_not_grouped 
-            | "Record attempts to match" >> beam.Map(AddAttemptsToUnmatchedMessages)
-        )
-
-        # New partition to separate requests and volunteers
+        
+        # Partiton 2: New partition to separate requests and volunteers
         resend_request, resend_volunteer = (
-            resend_not_grouped | "Partition help and volunteer" >> beam.Partition(lambda kv, _: 0 if len(kv[1][0]) > 0 else 1, 2)
+            category_not_grouped | "Partition help and volunteer" >> beam.Partition(lambda kv, _: 0 if len(kv[1][0]) > 0 else 1, 2)
         )
 
-        # Encode andsend each partition to the corresponding PubSub topic
+        # Encode and send each partition to the corresponding PubSub topic
         (
             resend_request 
+            | "Record attempts to match request" >> beam.ParDo(AddAttempts())
             | "Convert request to bytes" >> beam.Map(ConvertToBytes)
             | "Write to PubSub topic ayudantes-events" >> WriteToPubSub(topic=args.volunteers_topic, with_attributes=False)
         )
         (
             resend_volunteer 
+            | "Record attempts to match volunteer" >> beam.ParDo(AddAttempts())
             | "Convert help to bytes" >> beam.Map(ConvertToBytes)
             | "Write to PubSub topic necesitados-events" >> WriteToPubSub(topic=args.help_topic, with_attributes=False)
         )
