@@ -19,6 +19,7 @@ def ParsePubSubMessage(message):
     msg = json.loads(pubsub_message)
     return msg['categoria'], msg
 
+# Remove value "distance" after not matching in filter by distance
 def RemoveDistance(data_list):
     for record in data_list:
         if 'distance' in record:
@@ -35,31 +36,51 @@ def ConvertToBytes(element):
     message_bytes = json.dumps(cleaned_message).encode('utf-8')
     return message_bytes
 
+# Filter out messages that have reached 5 attempts
 
-# Count attempts, discard when > 5
+def NoMaxAttempts(element): 
+    logging.info(f"Incoming element: {element}")
+    data = element[1]
+    if "max_attempts_reached" in data and data["max_attempts_reached"] == True:
+        logging.info(f"Element with max_attempts_reached = TRUE: {element}")
+        # TBC: Almacenar en BigQuery
+        return False
+
+    logging.info(f"Element passed filter: {element}")
+    return True
+
+
+# Count attempts, limit when >5
 class AddAttempts(beam.DoFn):
     def process(self, element):
         category, (help_data, volunteer_data) = element
-        
+
         if help_data:
             for item in help_data:
                 item["attempts"] = item.get("attempts", 0) + 1
                 if item["attempts"] >= 5:
                     logging.info(f"Se ha alcanzado el límite de intentos para el mensaje del necesitado {item['id']}.")
-                    return None
+                    item["max_attempts_reached"] = True
+                    # TBC: Almacenar en BigQuery ?
+                else:
+                    pass
 
         if volunteer_data:
             for item in volunteer_data:
                 item["attempts"] = item.get("attempts", 0) + 1
                 if item["attempts"] >= 5:
                     logging.info(f"Se ha alcanzado el límite de intentos para el mensaje del voluntario {item['id']}.")
-                    return None
+                    item["max_attempts_reached"] = True
+                    return False
+                    # TBC: Almacenar en BigQuery ?
+                else:
+                    pass
 
         if help_data:
-            # logging.info(f"Mensaje saliente: {element}")
+            logging.info(f"Mensaje saliente: {element}")
             yield help_data
         if volunteer_data:
-            # logging.info(f"Mensaje saliente voluntarios: {element}")
+            logging.info(f"Mensaje saliente voluntarios: {element}")
             yield volunteer_data
             
 
@@ -332,6 +353,7 @@ def run():
             p
                 | "Read help data from PubSub" >> beam.io.ReadFromPubSub(subscription=args.help_subscription)
                 | "Parse JSON help messages" >> beam.Map(ParsePubSubMessage)
+                | "Filter out max_attempts_reached help messages" >> beam.Filter(NoMaxAttempts)
                 | "Sliding Window for help data" >> beam.WindowInto(beam.window.SlidingWindows(60, 5)) ## timing TBD
         )
 
@@ -339,17 +361,20 @@ def run():
             p
                 | "Read volunteer data from PubSub" >> beam.io.ReadFromPubSub(subscription=args.volunteers_subscription)
                 | "Parse JSON volunteer messages" >> beam.Map(ParsePubSubMessage)
+                | "Filter out max_attempts_reached volunteer messages" >> beam.Filter(NoMaxAttempts)
                 | "Sliding Window for volunteer data" >> beam.WindowInto(beam.window.SlidingWindows(60, 5)) ## timing TBD
         )
 
         # CoGroupByKey
         grouped_data = (help_data, volunteer_data) | "Merge PCollections" >> beam.CoGroupByKey()
 
+        # grouped_data | "debug firstt" >> beam.Map(lambda x: logging.info(x))
+
         # Partitions: 1) category_grouped: a match by category has been found 2) category_not_grouped: category has not been matched.
         category_grouped, category_not_grouped = (
             grouped_data | "Partition by volunteer found" >> beam.Partition(lambda kv, _: 0 if len(kv[1][0]) and len(kv[1][1]) > 0 else 1, 2) # 2 = number of partitions
         )
-        
+
         # Partiton 2: New partition to separate requests and volunteers
         resend_request, resend_volunteer = (
             category_not_grouped | "Partition help and volunteer" >> beam.Partition(lambda kv, _: 0 if len(kv[1][0]) > 0 else 1, 2)
@@ -369,9 +394,6 @@ def run():
             | "Write to PubSub topic necesitados-events" >> WriteToPubSub(topic=args.help_topic, with_attributes=False)
         )
 
-        # resend_request | "debug" >> beam.Map(lambda x: logging.info(f"Sent to pubsub topic ayudantes-events {x}"))
-        # resend_volunteer | "debug 2" >> beam.Map(lambda x: logging.info(f"Sent to pubsub topic necesitados-events {x}"))
-
         # Partition 1: continues the Pipeline = Match by distance & Tagged Output
         filtered_data = ( 
             category_grouped
@@ -389,27 +411,38 @@ def run():
         #     )
         # )
         
-        # Public to output topic
+        # # Public to output topic
         # output_data = (
         #     filtered_data.matched_users
-        #     | "Write to PubSub topic Output" >> beam.io.WriteToPubSub(topic=args.output_topic)
+        #     | "Write to PubSub topic Output" >> beam.io.WriteToPubSub(topic=args.output_topic, with_attributes=False)
         # )
         
-        # Separate data to store in Firestore and enable reprocessing
-        # reprocess_data = (
-        #     filtered_data.not_matched_users
-        #         | "Remove distance" >> beam.Map(RemoveDistance)
-        #         | "Separate help and volunteer" >> beam.FlatMap(lambda z: [
-        #         (z[0], ([z[1].get('request', {})], [])),
-        #         (z[0], ([], [z[1].get('volunteer', {})]))
-        #     ])
-        #     | "Store in BigQuery to reprocess" >> beam.ParDo(
-        #         StoreBigQueryNotMatched(
-        #             project_id=args.project_id,
-        #             dataset_id=args.dataset_id
-        #         )
-        #     )
-        # )
+        # Separate data to enable reprocessing
+        second_resend_request, second_resend_volunteer = (
+            filtered_data.not_matched_users
+                | "Remove distance" >> beam.Map(RemoveDistance)
+                | "Separate help and volunteer" >> beam.FlatMap(lambda z: [
+                (z[0], ([z[1].get('request', {})], [])),
+                (z[0], ([], [z[1].get('volunteer', {})]))
+                ])
+        # Partition to separate help and volunteer
+                | "Partition help and volunteer second match filter" >> beam.Partition(lambda kv, _: 0 if len(kv[1][0]) > 0 else 1, 2)
+        )
+
+        # Add attempts and send to PubSub topics
+        (
+            second_resend_request
+            | "Record attempts to match request level 2" >> beam.ParDo(AddAttempts())
+            | "Convert request to bytes level 2" >> beam.Map(ConvertToBytes)
+            | "Write to PubSub topic ayudantes-events level 2" >> WriteToPubSub(topic=args.volunteers_topic, with_attributes=False)
+         )
+
+        (
+            second_resend_volunteer 
+            | "Record attempts to match volunteer level 2" >> beam.ParDo(AddAttempts())
+            | "Convert help to bytes level 2" >> beam.Map(ConvertToBytes)
+            | "Write to PubSub topic necesitados-events level 2" >> WriteToPubSub(topic=args.help_topic, with_attributes=False)
+        )
 
 
 
