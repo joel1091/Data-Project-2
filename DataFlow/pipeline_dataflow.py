@@ -3,21 +3,20 @@ from apache_beam.runners import DataflowRunner
 from apache_beam.options.pipeline_options import PipelineOptions
 import apache_beam.transforms.window as window
 from apache_beam.metrics import Metrics
-# from google.cloud import firestore
-from apache_beam.io.gcp.bigquery import WriteToBigQuery
+from google.cloud import bigquery
+from apache_beam.io import WriteToPubSub
 
 from datetime import datetime
 import argparse
 import logging
 import json
 import math
-
+import uuid
 
 # Decode messages from Pub/Sub
 def ParsePubSubMessage(message):
     pubsub_message = message.decode('utf-8')
     msg = json.loads(pubsub_message)
-
     return msg['categoria'], msg
 
 def RemoveDistance(data_list):
@@ -26,78 +25,37 @@ def RemoveDistance(data_list):
             del record['distance']
     return data_list
 
-# Convert tuple to dict
-def flatten_tuple(element):
-    category, data = element
-    request = data.get('request', {})
-    volunteer = data.get('volunteer', {})
-    yield {
-#-------------------------- meter ID del match = > JOEL
-            "category": category,
-            "request_id": request.get("id"),
-            "request_nombre": request.get("nombre"),
-            "request_ubicacion": request.get("ubicacion"),
-            "request_poblacion": request.get("poblacion"),
-            "request_descripcion": request.get("descripcion"),
-            "request_created_at": request.get("created_at"),
-            "request_nivel_urgencia": request.get("nivel_urgencia"),
-            "request_telefono": request.get("telefono"),
-            "volunteer_id": volunteer.get("id"),
-            "volunteer_nombre": volunteer.get("nombre"),
-            "volunteer_ubicacion": volunteer.get("ubicacion"),
-            "volunteer_poblacion": volunteer.get("poblacion"),
-            "volunteer_radio_disponible_km": volunteer.get("radio_disponible_km"),
-            "volunteer_created_at": volunteer.get("created_at"),
-            "distance": data.get("distance"),
-        }
+def AddAttemptsToUnmatchedMessages(element):
+    if len(element) == 2: 
+        category, (help_data, volunteer_data) = element
+        attempts = 1
+    else:
+        category, (help_data, volunteer_data, attempts) = element
+        attempts += 1
+    
+    if attempts >= 5:
+        print("El mensaje ha alcanzado 5 intentos")
+    ############################################### AÑADIR LÓGICA BIGQUERY
 
-table_bq_schema = {
-#-------------------------- meter ID del match = > JOEL
-    "fields": [
-        {"name": "category", "type": "STRING", "mode": "REQUIRED"},
-        {"name": "request_id", "type": "STRING", "mode": "NULLABLE"},
-        {"name": "request_nombre", "type": "STRING", "mode": "NULLABLE"},
-        {"name": "request_ubicacion", "type": "STRING", "mode": "NULLABLE"},
-        {"name": "request_poblacion", "type": "STRING", "mode": "NULLABLE"},
-        {"name": "request_descripcion", "type": "STRING", "mode": "NULLABLE"},
-        {"name": "request_created_at", "type": "TIMESTAMP", "mode": "NULLABLE"},
-        {"name": "request_nivel_urgencia", "type": "INTEGER", "mode": "NULLABLE"},
-        {"name": "request_telefono", "type": "STRING", "mode": "NULLABLE"},
-        {"name": "volunteer_id", "type": "STRING", "mode": "NULLABLE"},
-        {"name": "volunteer_nombre", "type": "STRING", "mode": "NULLABLE"},
-        {"name": "volunteer_ubicacion", "type": "STRING", "mode": "NULLABLE"},
-        {"name": "volunteer_poblacion", "type": "STRING", "mode": "NULLABLE"},
-        {"name": "volunteer_radio_disponible_km", "type": "FLOAT", "mode": "NULLABLE"},
-        {"name": "volunteer_created_at", "type": "TIMESTAMP", "mode": "NULLABLE"},
-        {"name": "distance", "type": "FLOAT", "mode": "NULLABLE"}
-    ]
-}
+    message_with_attempts = (category, (help_data, volunteer_data, attempts))
+    return message_with_attempts
 
+# Clean message before resending to PubSub
+def ConvertToBytes(message):
+    help_data = message[1][0] if message[1][0] else None
+    volunteer_data = message[1][1] if message[1][1] else None
+    cleaned_message = {}
 
-# Store in Firestore the messages that have not been matched by category
-# Reused for the not matched by distance
-# class StoreFirestoreNotMatched(beam.DoFn):
+    if help_data:
+        cleaned_message = {**cleaned_message, **help_data[0]}
+    if volunteer_data:
+        cleaned_message = {**cleaned_message, **volunteer_data[0]}
+    
+    attempts = message[1][2]
+    cleaned_message['attempts'] = attempts
 
-#     def __init__(self,firestore_collection):
-#         self.firestore_collection = firestore_collection
-
-#     def process(self, element):
-#         db = firestore.Client()
-#         events = ['request', 'volunteer']
-#         category, (help_data, volunteer_data) = element
-
-#         for event in events:
-#             data_list = volunteer_data if event == 'volunteer' else help_data
-
-#             if data_list:
-#                 for record in data_list:
-#                     try:
-#                         doc_id = record.get('created_at', '')
-#                         if doc_id:
-#                             db.collection(self.firestore_collection).document('not_found').collection(event).document(doc_id).set(record)
-#                             # logging.info(f"Stored {event} record in Firestore")
-#                     except Exception as err:
-#                         logging.error(f"Error storing {event}: {err}")
+    message_bytes = json.dumps(cleaned_message).encode('utf-8')
+    return message_bytes
 
 
 # Filter by distance
@@ -138,11 +96,176 @@ class FilterbyDistance(beam.DoFn):
                 if distance <= radio_max:
                     yield data
                     yield beam.pvalue.TaggedOutput("matched_users", data)
-                    logging.info(f"Match found: {data}")  
+                    # logging.info(f"Match found: {data}")  
                 else:
                     yield beam.pvalue.TaggedOutput("not_matched_users", data)
                     # logging.info(f"Match NOT found: {data}")  
 
+# Setup BigQuery
+class BigQuerySetup:
+    def __init__(self, project_id, dataset_id):
+        self.client = bigquery.Client(project=project_id)
+        self.dataset_id = dataset_id
+        self.project_id = project_id
+        self.dataset_ref = f"{project_id}.{dataset_id}"
+## -------------------------- CREARLO MEJOR EN TERRAFORM PARA LIMPIAR UN POCO LA PIPELINE?
+    # def create_dataset_if_not_exists(self):
+    #     """Crea el dataset si no existe."""
+    #     try:
+    #         dataset = bigquery.Dataset(f"{self.project_id}.{self.dataset_id}")
+    #         dataset.location = "EU"
+    #         self.client.create_dataset(dataset, exists_ok=True)
+    #         logging.info(f"Dataset {self.dataset_id} está listo")
+    #     except Exception as e:
+    #         logging.error(f"Error creando dataset: {e}")
+    #         raise
+
+    def create_tables_if_not_exist(self):
+        """Crea todas las tablas necesarias si no existen."""
+        # Schema para unmatched_requests
+        requests_schema = [
+            bigquery.SchemaField("id", "STRING"),
+            bigquery.SchemaField("nombre", "STRING"),
+            bigquery.SchemaField("ubicacion", "STRING"),
+            bigquery.SchemaField("poblacion", "STRING"),
+            bigquery.SchemaField("categoria", "STRING"),
+            bigquery.SchemaField("descripcion", "STRING"),
+            bigquery.SchemaField("created_at", "TIMESTAMP"),
+            bigquery.SchemaField("nivel_urgencia", "INTEGER"),
+            bigquery.SchemaField("telefono", "STRING"),
+            bigquery.SchemaField("insertion_timestamp", "TIMESTAMP")
+        ]
+
+        # Schema para unmatched_volunteers
+        volunteers_schema = [
+            bigquery.SchemaField("id", "STRING"),
+            bigquery.SchemaField("nombre", "STRING"),
+            bigquery.SchemaField("ubicacion", "STRING"),
+            bigquery.SchemaField("poblacion", "STRING"),
+            bigquery.SchemaField("categoria", "STRING"),
+            bigquery.SchemaField("radio_disponible_km", "FLOAT"),
+            bigquery.SchemaField("created_at", "TIMESTAMP"),
+            bigquery.SchemaField("insertion_timestamp", "TIMESTAMP")
+        ]
+
+        # Schema para matched_pairs
+        matched_pairs_schema = [  ################################## ADD MORE COLUMNS
+            bigquery.SchemaField("match_id", "STRING"),
+            bigquery.SchemaField("category", "STRING"),
+            bigquery.SchemaField("request_data", "STRING"),
+            bigquery.SchemaField("volunteer_data", "STRING"),
+            bigquery.SchemaField("distance", "FLOAT"),
+            bigquery.SchemaField("matched_timestamp", "TIMESTAMP"),
+            bigquery.SchemaField("insertion_timestamp", "TIMESTAMP")
+        ]
+
+        tables_config = [
+            ("unmatched_requests", requests_schema),
+            ("unmatched_volunteers", volunteers_schema),
+            ("matched_pairs", matched_pairs_schema)
+        ]
+
+        for table_name, schema in tables_config:
+            self.create_table_if_not_exists(table_name, schema)
+
+    def create_table_if_not_exists(self, table_name, schema):
+        """Crea una tabla específica si no existe."""
+        table_id = f"{self.dataset_ref}.{table_name}"
+        try:
+            table = bigquery.Table(table_id, schema=schema)
+            
+            # Usar matched_timestamp para matched_pairs y insertion_timestamp para las demás
+            partition_field = "matched_timestamp" if table_name == "matched_pairs" else "insertion_timestamp"
+            
+            table.time_partitioning = bigquery.TimePartitioning(
+                type_=bigquery.TimePartitioningType.DAY,
+                field=partition_field
+            )
+            self.client.create_table(table, exists_ok=True)
+            logging.info(f"Tabla {table_name} está lista")
+        except Exception as e:
+            logging.error(f"Error creando tabla {table_name}: {e}")
+            raise
+
+class StoreBigQueryMatchedUsers(beam.DoFn):
+    def __init__(self, project_id, dataset_id):
+        self.project_id = project_id
+        self.dataset_id = dataset_id
+        
+    def setup(self):
+        self.client = bigquery.Client(project=self.project_id)
+        self.processed_pairs = set()
+        
+    def process(self, element):
+        category, matched_data = element
+        
+        try:
+            # Crear una clave única para este par
+            pair_key = f"{matched_data['request']['id']}_{matched_data['volunteer']['id']}"
+            
+            # Si ya procesamos este par, lo saltamos
+            if pair_key in self.processed_pairs:
+                return
+            
+            self.processed_pairs.add(pair_key)
+            
+            current_timestamp = datetime.now().isoformat()
+            flattened_data = { ################################## ADD MORE COLUMNS
+                "match_id": str(uuid.uuid4()),
+                'category': category,
+                'request_data': json.dumps(matched_data["request"]),
+                'volunteer_data': json.dumps(matched_data["volunteer"]),
+                'distance': matched_data.get("distance"),
+                'matched_timestamp': current_timestamp,
+                'insertion_timestamp': current_timestamp
+            }
+            
+            errors = self.client.insert_rows_json(
+                f"{self.project_id}.{self.dataset_id}.matched_pairs",
+                [flattened_data]
+            )
+            if errors:
+                logging.error(f"Error inserting matched rows: {errors}")
+            
+        except Exception as err:
+            logging.error(f"Error storing matched user: {err}")
+
+# class StoreBigQueryNotMatched(beam.DoFn):
+#     def __init__(self, project_id, dataset_id):
+#         self.project_id = project_id
+#         self.dataset_id = dataset_id
+        
+#     def setup(self):
+#         self.client = bigquery.Client(project=self.project_id)
+        
+#     def process(self, element):
+#         events = ['request', 'volunteer']
+#         category, (help_data, volunteer_data) = element
+        
+#         tables = {
+#             'request': f"{self.project_id}.{self.dataset_id}.unmatched_requests",
+#             'volunteer': f"{self.project_id}.{self.dataset_id}.unmatched_volunteers"
+#         }
+        
+#         for event in events:
+#             data_list = volunteer_data if event == 'volunteer' else help_data
+#             if data_list:
+#                 for record in data_list:
+#                     try:
+#                         record['categoria'] = category
+#                         record['insertion_timestamp'] = datetime.now().isoformat()
+#                         # Convertir created_at a timestamp si existe
+#                         if 'created_at' in record:
+#                             record['created_at'] = datetime.fromisoformat(record['created_at']).isoformat()
+                        
+#                         errors = self.client.insert_rows_json(
+#                             tables[event],
+#                             [record]
+#                         )
+#                         if errors:
+#                             logging.error(f"Error inserting rows: {errors}")
+#                     except Exception as err:
+#                         logging.error(f"Error storing {event}: {err}")
 
 
 def run():
@@ -154,20 +277,24 @@ def run():
                 help='GCP cloud project name.')
     
     parser.add_argument(
+                '--help_topic',
+                required=False,
+                help='PubSub topicc used for writing help requests data.')
+
+    parser.add_argument(
                 '--help_subscription',
                 required=True,
                 help='PubSub subscription used for reading help requests data.')
     
+    parser.add_argument(
+                '--volunteers_topic',
+                required=False,
+                help='PubSub topicc used for writing volunteers requests data.')
     
     parser.add_argument(
                 '--volunteers_subscription',
                 required=True,
                 help='PubSub subscription used for reading volunteers data.')
-    
-    # parser.add_argument(
-    #             '--firestore_collection',
-    #             required=False,
-    #             help='The Firestore collection where requests data will be stored.')
     
     parser.add_argument(
                 '--bigquery_dataset',
@@ -176,11 +303,17 @@ def run():
     
     parser.add_argument(
                 '--output_topic',
-                required=True,
+                required=False,
                 help='PubSub Topic for matched users.')
     
-
     args, pipeline_opts = parser.parse_known_args()
+
+
+# BigQuery configuration
+    bq_setup = BigQuerySetup(args.project_id, args.bigquery_dataset)
+    # bq_setup.create_dataset_if_not_exists()
+    bq_setup.create_tables_if_not_exist()
+
 
 ## PIPELINE
     # Pipeline Options
@@ -212,26 +345,48 @@ def run():
             grouped_data | "Partition by volunteer found" >> beam.Partition(lambda kv, _: 0 if len(kv[1][0]) and len(kv[1][1]) > 0 else 1, 2) # 2 = number of partitions
         )
 
-        # Partition 2: not grouped by category resend to PubSub
+        # Partition 2: not grouped by category add attempts
+        resend_not_grouped = (
+        category_not_grouped 
+            | "Record attempts to match" >> beam.Map(AddAttemptsToUnmatchedMessages)
+        )
 
+        # New partition to separate requests and volunteers
+        resend_request, resend_volunteer = (
+            resend_not_grouped | "Partition help and volunteer" >> beam.Partition(lambda kv, _: 0 if len(kv[1][0]) > 0 else 1, 2)
+        )
+
+        # Encode andsend each partition to the corresponding PubSub topic
+        (
+            resend_request 
+            | "Convert request to bytes" >> beam.Map(ConvertToBytes)
+            | "Write to PubSub topic ayudantes-events" >> WriteToPubSub(topic=args.volunteers_topic, with_attributes=False)
+        )
+        (
+            resend_volunteer 
+            | "Convert help to bytes" >> beam.Map(ConvertToBytes)
+            | "Write to PubSub topic necesitados-events" >> WriteToPubSub(topic=args.help_topic, with_attributes=False)
+        )
+
+        resend_request | "debug" >> beam.Map(lambda x: logging.info(f"Sent to pubsub topic ayudantes-events {x}"))
+        resend_volunteer | "debug 2" >> beam.Map(lambda x: logging.info(f"Sent to pubsub topic necesitados-events {x}"))
 
         # Partition 1: continues the Pipeline = Match by distance & Tagged Output
-        filtered_data = ( 
-            category_grouped
-            | "Filter by distance" >> beam.ParDo(FilterbyDistance()).with_outputs("matched_users", "not_matched_users")
-        )
+        # filtered_data = ( 
+        #     category_grouped
+        #     | "Filter by distance" >> beam.ParDo(FilterbyDistance()).with_outputs("matched_users", "not_matched_users")
+        # )
         
-        # Store matched users to BigQuery
-        bq_data = (
-            filtered_data.matched_users
-                | "Flatten Tuple to Dict" >> beam.Map(flatten_tuple)
-                | "Send matched_users to BigQuery" >> beam.io.WriteToBigQuery(
-                    table=f"{args.project_id}:{args.bigquery_dataset}.matched_users", 
-                    schema=table_bq_schema,
-                    create_disposition=beam.io.BigQueryDisposition.CREATE_IF_NEEDED,
-                    write_disposition=beam.io.BigQueryDisposition.WRITE_APPEND)
-                )
-        bq_data | "debug bq" >> beam.Map(lambda x: logging.info({x}))
+        # # Store matched users to BigQuery
+        # bq_matched = (
+        #     filtered_data.matched_users
+        #     | "Write matched_users to BigQuery" >> beam.ParDo(
+        #         StoreBigQueryMatchedUsers(
+        #             project_id=args.project_id,
+        #             dataset_id=args.bigquery_dataset
+        #         )
+        #     )
+        # )
         
         # Public to output topic
         # output_data = (
@@ -240,16 +395,20 @@ def run():
         # )
         
         # Separate data to store in Firestore and enable reprocessing
-        reprocess_data = (
-            filtered_data.not_matched_users
-                | "Remove distance" >> beam.Map(RemoveDistance)
-                | "Separate help and volunteer" >> beam.FlatMap(lambda z: [
-                    (z[0], ([z[1].get('request', {})], [])),
-                    (z[0], ([], [z[1].get('volunteer', {})]))
-                ])
-# ------------------------- AÑADIR FUNCIÓN CONTADOR
-                # | "Resend not matched by distance to PubSub topic output" >>
-        )
+        # reprocess_data = (
+        #     filtered_data.not_matched_users
+        #         | "Remove distance" >> beam.Map(RemoveDistance)
+        #         | "Separate help and volunteer" >> beam.FlatMap(lambda z: [
+        #         (z[0], ([z[1].get('request', {})], [])),
+        #         (z[0], ([], [z[1].get('volunteer', {})]))
+        #     ])
+        #     | "Store in BigQuery to reprocess" >> beam.ParDo(
+        #         StoreBigQueryNotMatched(
+        #             project_id=args.project_id,
+        #             dataset_id=args.dataset_id
+        #         )
+        #     )
+        # )
 
 
 
