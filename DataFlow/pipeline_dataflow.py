@@ -37,17 +37,16 @@ def ConvertToBytes(element):
     return message_bytes
 
 # Filter out messages that have reached 5 attempts
-
 def NoMaxAttempts(element): 
-    logging.info(f"Incoming element: {element}")
+    # logging.info(f"Incoming element: {element}")
     data = element[1]
     if "max_attempts_reached" in data and data["max_attempts_reached"] == True:
         logging.info(f"Element with max_attempts_reached = TRUE: {element}")
-        # TBC: Almacenar en BigQuery
+##################################### TBC: Almacenar en BigQuery ? = crear un DoFn con una función de BQ?
         return False
-
-    logging.info(f"Element passed filter: {element}")
-    return True
+    else:
+        logging.info(f"Element passed filter: {element}")
+        return True
 
 
 # Count attempts, limit when >5
@@ -368,7 +367,7 @@ def run():
         # CoGroupByKey
         grouped_data = (help_data, volunteer_data) | "Merge PCollections" >> beam.CoGroupByKey()
 
-        # grouped_data | "debug firstt" >> beam.Map(lambda x: logging.info(x))
+        grouped_data | "debug firstt" >> beam.Map(lambda x: logging.info(f"GROUPED 1: {x}"))
 
         # Partitions: 1) category_grouped: a match by category has been found 2) category_not_grouped: category has not been matched.
         category_grouped, category_not_grouped = (
