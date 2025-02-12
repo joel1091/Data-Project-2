@@ -30,48 +30,28 @@ def ConvertToBytes(element):
     cleaned_message = {}
     if element:
         for item in element:
-            item["attempts"] = item.get("attempts", 0)
-            cleaned_message = item
+            cleaned_message = item 
+    logging.info(f"Mensaje limpio antes de convertir a bytes: {cleaned_message}")
     message_bytes = json.dumps(cleaned_message).encode('utf-8')
     return message_bytes
 
+
 # Count Attempts
 class AddAttempts(beam.DoFn):
-
-    def increment_attempts(self, data):
-        for item in data:
-            item["attempts"] = item.get("attempts", 0) + 1
-        return data
-
-    def check_attempts(self, data):
-        for item in data:
-            if item["attempts"] >= 5:
-                print(f"El mensaje con id {item['id']} ha alcanzado 5 intentos.")
-                return None
-            # self.SendtoBigQuery(item)
-        return data
-
-    # def SendtoBigQuery(self, item):
-    #     print(f"Realizando una acción con el mensaje {item['id']}.")
-
-
     def process(self, element):
         category, (help_data, volunteer_data) = element
-    
-        if help_data:
-            help_data = self.increment_attempts(help_data)
 
-        if volunteer_data:
-            volunteer_data = self.increment_attempts(volunteer_data)
-        
         if help_data:
-            help_data = self.check_attempts(help_data)
+            for item in help_data:
+                item["attempts"] = item.get("attempts", 0) + 1
         if volunteer_data:
-            help_data = self.check_attempts(help_data)
-##############
-        if help_data is None or volunteer_data is None:
-            return  
-###############
+            for item in volunteer_data:
+                item["attempts"] = item.get("attempts", 0) + 1 
+
+        if any(item["attempts"] >= 5 for item in help_data + volunteer_data if item):
+            logging.info("Se ha alcanzado el límite de intentos en un mensaje.")
+################## AÑADIR LÓGICA BIGQUERY
+            return None  
         if help_data:
             yield help_data
         if volunteer_data:
@@ -383,14 +363,14 @@ def run():
             | "Write to PubSub topic necesitados-events" >> WriteToPubSub(topic=args.help_topic, with_attributes=False)
         )
 
-        resend_request | "debug" >> beam.Map(lambda x: logging.info(f"Sent to pubsub topic ayudantes-events {x}"))
-        resend_volunteer | "debug 2" >> beam.Map(lambda x: logging.info(f"Sent to pubsub topic necesitados-events {x}"))
+        # resend_request | "debug" >> beam.Map(lambda x: logging.info(f"Sent to pubsub topic ayudantes-events {x}"))
+        # resend_volunteer | "debug 2" >> beam.Map(lambda x: logging.info(f"Sent to pubsub topic necesitados-events {x}"))
 
         # Partition 1: continues the Pipeline = Match by distance & Tagged Output
-        # filtered_data = ( 
-        #     category_grouped
-        #     | "Filter by distance" >> beam.ParDo(FilterbyDistance()).with_outputs("matched_users", "not_matched_users")
-        # )
+        filtered_data = ( 
+            category_grouped
+            | "Filter by distance" >> beam.ParDo(FilterbyDistance()).with_outputs("matched_users", "not_matched_users")
+        )
         
         # # Store matched users to BigQuery
         # bq_matched = (
