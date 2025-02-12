@@ -31,31 +31,37 @@ def ConvertToBytes(element):
     if element:
         for item in element:
             cleaned_message = item 
-    logging.info(f"Mensaje limpio antes de convertir a bytes: {cleaned_message}")
+    # logging.info(f"Mensaje limpio: {cleaned_message}")
     message_bytes = json.dumps(cleaned_message).encode('utf-8')
     return message_bytes
 
 
-# Count Attempts
+# Count attempts, discard when > 5
 class AddAttempts(beam.DoFn):
     def process(self, element):
         category, (help_data, volunteer_data) = element
-
+        
         if help_data:
             for item in help_data:
                 item["attempts"] = item.get("attempts", 0) + 1
+                if item["attempts"] >= 5:
+                    logging.info(f"Se ha alcanzado el límite de intentos para el mensaje del necesitado {item['id']}.")
+                    return None
+
         if volunteer_data:
             for item in volunteer_data:
-                item["attempts"] = item.get("attempts", 0) + 1 
+                item["attempts"] = item.get("attempts", 0) + 1
+                if item["attempts"] >= 5:
+                    logging.info(f"Se ha alcanzado el límite de intentos para el mensaje del voluntario {item['id']}.")
+                    return None
 
-        if any(item["attempts"] >= 5 for item in help_data + volunteer_data if item):
-            logging.info("Se ha alcanzado el límite de intentos en un mensaje.")
-################## AÑADIR LÓGICA BIGQUERY
-            return None  
         if help_data:
+            # logging.info(f"Mensaje saliente: {element}")
             yield help_data
         if volunteer_data:
+            # logging.info(f"Mensaje saliente voluntarios: {element}")
             yield volunteer_data
+            
 
 # Filter by distance
 class FilterbyDistance(beam.DoFn):
