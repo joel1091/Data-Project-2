@@ -5,8 +5,9 @@ from datetime import datetime
 import json
 import re
 import folium
-from streamlit_folium import folium_static, st_folium
+from streamlit_folium import st_folium
 from folium.plugins import MousePosition
+from geopy.geocoders import Nominatim
 
 # Configuración de Pub/Sub
 project_id = '<PROJECT_ID>' 
@@ -15,6 +16,18 @@ topic_id = 'necesitados-events'
 # Inicializar el cliente de Pub/Sub
 publisher = pubsub_v1.PublisherClient()
 topic_path = publisher.topic_path(project_id, topic_id)
+
+# Geolocalizador de OpenStreetMap (Para transformar de coordenadas a nombre de pueblo)
+geolocator = Nominatim(user_agent="geoapi")
+
+def obtener_pueblo(lat, lon):
+    try:
+        location = geolocator.reverse((lat, lon), exactly_one=True)
+        if location and 'address' in location.raw:
+            return location.raw['address'].get('village') or location.raw['address'].get('town') or location.raw['address'].get('city', 'Desconocido')
+        return "Desconocido"
+    except Exception as e:
+        return "Error obteniendo nombre"
 
 # Función para enviar datos a Pub/Sub
 def enviar_a_pubsub(data):
@@ -30,61 +43,67 @@ def enviar_a_pubsub(data):
 def mostrar():
     st.title("Formulario de Solicitud de Ayuda")
 
-    m = folium.Map(location=[39.46, -0.45], zoom_start=11)
-    
-    # Agregar el plugin para mostrar coordenadas al mover el mouse
-    formatter = "function(num) {return L.Util.formatNum(num, 5);};"
-    MousePosition(
-        position='topright',
-        separator=' | ',
-        empty_string='NaN',
-        lng_first=True,
-        num_digits=20,
-        prefix='Coordenadas:',
-        lat_formatter=formatter,
-        lng_formatter=formatter,
-    ).add_to(m)
+    # Inicializar variables en session_state
+    if "lat" not in st.session_state:
+        st.session_state.lat = None
+        st.session_state.lon = None
+        st.session_state.pueblo = ""  
+        st.session_state.zoom = 11  
+        st.session_state.center = [39.46, -0.45]  
 
-    # Mostrar el mapa y capturar los clicks
-    st.write("Haz clic en el mapa para seleccionar la ubicación:")
-    map_data = st_folium(m, width=800, height=400)
+    # Crear el mapa con la vista guardada (VL)
+    m = folium.Map(location=st.session_state.center, zoom_start=st.session_state.zoom)
 
-    # Variables para almacenar las coordenadas
-    lat = None
-    lon = None
+    # Si ya hay una ubicación guardada, agregar marcador
+    if st.session_state.lat and st.session_state.lon:
+        folium.Marker(
+            location=[st.session_state.lat, st.session_state.lon],
+            icon=folium.Icon(icon="map-marker", color="red"),
+        ).add_to(m)
 
-    # Actualizar coordenadas cuando se hace clic en el mapa
-    if map_data['last_clicked']:
-        lat = map_data['last_clicked']['lat']
-        lon = map_data['last_clicked']['lng']
+    # Mostrar el mapa y capturar eventos
+    map_data = st_folium(m, width=800, height=400, key="map")
 
-    # Recopilación de datos
-    nombre = st.text_input("Nombre Completo")
+    # Si el usuario hace clic en el mapa, actualizar coordenadas y obtener el nombre del pueblo
+    if map_data and 'last_clicked' in map_data and map_data['last_clicked']:
+        st.session_state.lat = map_data['last_clicked']['lat']
+        st.session_state.lon = map_data['last_clicked']['lng']
 
+        # Obtener el nombre del pueblo
+        st.session_state.pueblo = obtener_pueblo(st.session_state.lat, st.session_state.lon)
+
+        # Mantener la vista actual
+        if 'zoom' in map_data:
+            st.session_state.zoom = map_data['zoom']
+        if 'center' in map_data:
+            st.session_state.center = [map_data['center']['lat'], map_data['center']['lng']]
+
+        st.rerun()  # 🔥 Recarga la app para actualizar el marcador y el nombre del pueblo
+
+    # Mostrar coordenadas seleccionadas y el pueblo
     col1, col2 = st.columns(2)
 
     with col1:
-        latitud = st.text_input("Latitud", value=str(round(lat, 6)) if lat else "", disabled=True)
+        latitud = st.text_input("Latitud", value=str(round(st.session_state.lat, 6)) if st.session_state.lat else "", disabled=True)
 
     with col2:
-        longitud = st.text_input("Longitud", value=str(round(lon, 6)) if lon else "", disabled=True)
+        longitud = st.text_input("Longitud", value=str(round(st.session_state.lon, 6)) if st.session_state.lon else "", disabled=True)
 
-    poblacion = st.text_input("Población")
+    poblacion = st.text_input("Población", value=st.session_state.pueblo, disabled=True)
 
+    nombre = st.text_input("Nombre Completo")
     etiquetas = ["Selecciona el tipo de problema", "Alimentos", "Medicamentos", "Limpieza", "Maquinaria", "Transporte", "Asistencia Social"]
     etiqueta = st.selectbox("Etiqueta", etiquetas, index=0)
 
     descripcion = st.text_area("Descripción")
     nivel_urgencia = st.slider("Nivel de Urgencia", 1, 5)
-
     telefono = st.text_input("Teléfono")
 
     if telefono and not re.match(r'^\d{9}$', telefono):
         st.error("El número de teléfono debe tener exactamente 9 dígitos numéricos.")
 
-    # Enviar datos al hacer clic en el botón
     if st.button("Enviar Solicitud"):
-        if not lat or not lon:
+        if not st.session_state.lat or not st.session_state.lon:
             st.error("Por favor, seleccione una ubicación en el mapa.")
         elif all([nombre, latitud, longitud, poblacion, etiqueta != "Selecciona el tipo de problema", descripcion, telefono and re.match(r'^\d{9}$', telefono)]):
             id_solicitud = str(uuid.uuid4())
@@ -94,7 +113,7 @@ def mostrar():
                 'id': id_solicitud,
                 'nombre': nombre,
                 'ubicacion': f"{latitud},{longitud}",
-                'poblacion': poblacion,
+                'poblacion': poblacion,  # Ahora se autocompleta con el nombre del pueblo
                 'categoria': etiqueta,
                 'descripcion': descripcion,
                 'created_at': created_at,
