@@ -77,17 +77,18 @@ class HandleMaxAttempts(beam.DoFn):
         #     return
         if help_data:
             for item in help_data:
-                if item.get("max_attempts_reached", False):
-                    yield beam.pvalue.TaggedOutput('bigquery', item)
-                    logging.info(f"it has been tagged as BQ:{item}")
+                if item.get("max_attempts_reached", False) == True:
+                    yield beam.pvalue.TaggedOutput('bigquery', item) ####################### ISSUE
+                    # logging.info(f"it has been tagged as BQ:{item}")
                 else:
                     yield beam.pvalue.TaggedOutput('valid', element)
 
         if volunteer_data:
             for item in volunteer_data:
-                if item.get("max_attempts_reached", False):
-                    yield beam.pvalue.TaggedOutput('bigquery', item)
-                    logging.info(f"It has been tagged as bigquery {item}")
+                logging.info(f"Checking volunteer item: {item}")
+                if item.get("max_attempts_reached", False) == True:
+                    yield beam.pvalue.TaggedOutput('bigquery', item) ####################### ISSUE
+                    # logging.info(f"It has been tagged as bigquery {item}")
                 else:
                     yield beam.pvalue.TaggedOutput('valid', element)
 
