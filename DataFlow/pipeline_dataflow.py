@@ -372,7 +372,7 @@ def run():
         # CoGroupByKey
         grouped_data = (help_data, volunteer_data) | "Merge PCollections" >> beam.CoGroupByKey()
 
-        grouped_data | "debug firstt" >> beam.Map(lambda x: logging.info(f"GROUPED 1: {x}"))
+        # grouped_data | "debug firstt" >> beam.Map(lambda x: logging.info(f"GROUPED 1: {x}"))
 
         # Partitions: 1) category_grouped: a match by category has been found 2) category_not_grouped: category has not been matched.
         category_grouped, category_not_grouped = (
@@ -439,6 +439,7 @@ def run():
         (
             second_resend_request
             | "Record attempts to match request level 2" >> beam.ParDo(AddAttempts())
+            | "Delete empty volunteer messages (>5)" >> beam.Filter(lambda x: x is not None) 
             | "Convert request to bytes level 2" >> beam.Map(ConvertToBytes)
             | "Write to PubSub topic ayudantes-events level 2" >> WriteToPubSub(topic=args.volunteers_topic, with_attributes=False)
          )
@@ -446,6 +447,7 @@ def run():
         (
             second_resend_volunteer 
             | "Record attempts to match volunteer level 2" >> beam.ParDo(AddAttempts())
+            | "Delete empty volunteer messages (>5)" >> beam.Filter(lambda x: x is not None) 
             | "Convert help to bytes level 2" >> beam.Map(ConvertToBytes)
             | "Write to PubSub topic necesitados-events level 2" >> WriteToPubSub(topic=args.help_topic, with_attributes=False)
         )
