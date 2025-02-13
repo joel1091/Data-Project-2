@@ -79,6 +79,7 @@ class HandleMaxAttempts(beam.DoFn):
             for item in help_data:
                 if "max_attempts_reached" in item:
                     yield beam.pvalue.TaggedOutput('bigquery', element)
+                    logging.info(f"it has been tagged as BQ:{element}")
                 else:
                     yield beam.pvalue.TaggedOutput('valid', element)
 
@@ -272,33 +273,55 @@ class StoreBigQueryNotMatched(beam.DoFn):
         self.client = bigquery.Client(project=self.project_id)
         
     def process(self, element):
-        events = ['request', 'volunteer']
-        category, (help_data, volunteer_data) = element
+        if element is None:
+            logging.error("No element received in BQ")
+            return
+        try:
+            category, (help_data, volunteer_data) = element
+        except Exception as e:
+            logging.error(f"Error unpacking element {element}: {str(e)}")
+            return
         
+        
+        # Diccionario de tablas para BigQuery
         tables = {
             'request': f"{self.project_id}.{self.dataset_id}.unmatched_requests",
             'volunteer': f"{self.project_id}.{self.dataset_id}.unmatched_volunteers"
         }
-        
-        for event in events:
+
+        for event in ['request', 'volunteer']:
             data_list = volunteer_data if event == 'volunteer' else help_data
             if data_list:
                 for record in data_list:
                     try:
+                        if not record:
+                            logging.warning("Skipping empty record")
+                            continue
+
                         record['categoria'] = category
                         record['insertion_timestamp'] = datetime.now().isoformat()
-                        # Convertir created_at a timestamp si existe
+                    
                         if 'created_at' in record:
-                            record['created_at'] = datetime.fromisoformat(record['created_at']).isoformat()
-                        
+                            try:
+                                record['created_at'] = datetime.fromisoformat(record['created_at']).isoformat()
+                            except ValueError as e:
+                                logging.error(f"Error parsing 'created_at' for record {record['id']}: {e}")
+                                continue
+
                         errors = self.client.insert_rows_json(
                             tables[event],
                             [record]
                         )
                         if errors:
-                            logging.error(f"Error inserting rows: {errors}")
+                            logging.error(f"Error inserting rows into {event} table: {errors}")
+                        else:
+                            logging.info(f"Successfully inserted record {record['id']} into {event} table")
                     except Exception as err:
-                        logging.error(f"Error storing {event}: {err}")
+                        logging.error(f"Error storing {event} record {record['id']}: {err}")
+        
+
+
+ 
 
 def run():
     parser = argparse.ArgumentParser(description=('Input arguments for the Dataflow Streaming Pipeline.'))
@@ -374,19 +397,17 @@ def run():
         # CoGroupByKey
         grouped_data = (help_data, volunteer_data) | "Merge PCollections" >> beam.CoGroupByKey()
 
-        # grouped_data | "debug firstt" >> beam.Map(lambda x: logging.info(f"GROUPED 1: {x}"))
-
         # Partitions: 1) category_grouped: a match by category has been found 2) category_not_grouped: category has not been matched.
         category_grouped, category_not_grouped = (
             grouped_data | "Partition by volunteer found" >> beam.Partition(lambda kv, _: 0 if len(kv[1][0]) and len(kv[1][1]) > 0 else 1, 2) # 2 = number of partitions
         )
 
-        # Partiton 2: New partition to separate requests and volunteers
+        # PARTITION 2: New partition to separate requests and volunteers that have not matched
         resend_request, resend_volunteer = (
             category_not_grouped | "Partition help and volunteer" >> beam.Partition(lambda kv, _: 0 if len(kv[1][0]) > 0 else 1, 2)
         )
 
-        # Encode and send each partition to the corresponding PubSub topic
+        #### Encode and send each partition to the corresponding PubSub topic or to Big Query
         # Filter out the messages with attempts > 5 (tags)
         max_attempts_handler_req = (
             resend_request 
@@ -415,30 +436,27 @@ def run():
         valid_requests = (
             max_attempts_handler_req.valid
             | "Convert request to bytes" >> beam.Map(ConvertToBytes)
-            | "Write to PubSub topic necesitados-events" >> WriteToPubSub(topic=args.volunteers_topic, with_attributes=False)
+            | "Write to PubSub topic necesitados-events" >> WriteToPubSub(topic=args.help_topic, with_attributes=False)
         )
         valid_volunteers = (
             max_attempts_handler_vol.valid 
             | "Convert volunteers to bytes" >> beam.Map(ConvertToBytes)
-            | "Write to PubSub topic ayudantes-events" >> WriteToPubSub(topic=args.help_topic, with_attributes=False)
+            | "Write to PubSub topic ayudantes-events" >> WriteToPubSub(topic=args.volunteers_topic, with_attributes=False)
         )
 
-        # Partition 1: continues the Pipeline = Match by distance & Tagged Output
+        # PARTITION 1: continues the Pipeline = Match by distance & Tagged Output
         filtered_data = ( 
             category_grouped
             | "Filter by distance" >> beam.ParDo(FilterbyDistance()).with_outputs("matched_users", "not_matched_users")
         )
-        
-        # Store matched users to BigQuery
+        # Store matched users to BigQuery (tag = matched_users)
         bq_matched = (
             filtered_data.matched_users
             | "Write matched_users to BigQuery" >> beam.ParDo(
                 StoreBigQueryMatchedUsers(
                     project_id=args.project_id,
                     dataset_id=args.bigquery_dataset
-                )
-            )
-        )
+                )))
         
         # # Public to output topic
         # output_data = (
@@ -446,7 +464,7 @@ def run():
         #     | "Write to PubSub topic Output" >> beam.io.WriteToPubSub(topic=args.output_topic, with_attributes=False)
         # )
         
-        # Separate data to enable reprocessing
+        # Separate data to enable reprocessing (tag = not matched_users)
         second_resend_request, second_resend_volunteer = (
             filtered_data.not_matched_users
                 | "Remove distance" >> beam.Map(RemoveDistance)
@@ -459,43 +477,41 @@ def run():
         )
 
         # Add attempts and send to PubSub topics
-        # max_attempts_handler_req_2 = (
-        #     second_resend_request
-        #     | "Record attempts to match request level 2" >> beam.ParDo(AddAttempts())
-        #     | "Delete empty requests messages (>5) level 2" >> beam.Filter(lambda x: x is not None) 
-        #     | "Handle max attempts for reques level 2" >> beam.ParDo(HandleMaxAttempts(f"{args.project_id}:{args.bigquery_dataset}.unmatched_requests").with_outputs('bigquery', main='valid'))
-        #  )
+        max_attempts_handler_req_2 = (
+            second_resend_request
+            | "Record attempts to match request level 2" >> beam.ParDo(AddAttempts())
+            | "Handle max attempts for request level 2" >> beam.ParDo(HandleMaxAttempts()).with_outputs('bigquery','valid')
+         )
+        max_attempts_handler_vol_2 = (
+            second_resend_volunteer 
+            | "Record attempts to match volunteer level 2" >> beam.ParDo(AddAttempts())
+            | "Handle max attempts for volunteers" >> beam.ParDo(HandleMaxAttempts()).with_outputs('bigquery', 'valid')
+        )
 
-        # max_attempts_handler_vol_2 = (
-        #     second_resend_volunteer 
-        #     | "Record attempts to match volunteer level 2" >> beam.ParDo(AddAttempts())
-        #     | "Delete empty volunteer messages (>5) level 2" >> beam.Filter(lambda x: x is not None) 
-        #     | "Handle max attempts for volunteers level 2" >> beam.ParDo(HandleMaxAttempts(f"{args.project_id}:{args.bigquery_dataset}.unmatched_volunteers").with_outputs('bigquery', main='valid'))
-        # )
+        (
+            max_attempts_handler_req_2.bigquery
+            | "Send requests (>5) to BigQuery level 2" >> beam.ParDo(StoreBigQueryNotMatched(
+            project_id=args.project_id, dataset_id=args.bigquery_dataset))
+        )
 
-        # valid_requests_2 = (
-        # max_attempts_handler_req_2.bigquery
-        # | "Send requests (>5) to BigQuery level 2" >> beam.ParDo(StoreBigQueryNotMatched(
-        #     project_id=args.project_id, dataset_id=args.bigquery_dataset))
-        # )
+        (   
+            max_attempts_handler_vol_2.bigquery
+            | "Send volunteers (>5) to BigQuery level 2" >> beam.ParDo(StoreBigQueryNotMatched(
+            project_id=args.project_id, dataset_id=args.bigquery_dataset))
+        )
 
-        # valid_volunteers_2 = (   
-        # max_attempts_handler_vol_2.bigquery
-        # | "Send volunteers (>5) to BigQuery level 2" >> beam.ParDo(StoreBigQueryNotMatched(
-        #     project_id=args.project_id, dataset_id=args.bigquery_dataset))
-        # )
+        valid_requests_2 = (
+        max_attempts_handler_req_2.valid
+        | "Convert request to bytes level 2" >> beam.Map(ConvertToBytes)
+        | "Write to PubSub topic ayudantes-events level 2" >> WriteToPubSub(topic=args.help_topic, with_attributes=False)
+        )
 
-        # (
-        # valid_requests_2
-        # | "Convert request to bytes level 2" >> beam.Map(ConvertToBytes)
-        # | "Write to PubSub topic ayudantes-events level 2" >> WriteToPubSub(topic=args.volunteers_topic, with_attributes=False)
-        # )
-
-        # (
-        # valid_volunteers_2
-        # | "Convert help to bytes level 2" >> beam.Map(ConvertToBytes)
-        # | "Write to PubSub topic necesitados-events level 2" >> WriteToPubSub(topic=args.help_topic, with_attributes=False)
-        # )
+        valid_volunteers_2 = (
+            max_attempts_handler_vol_2.valid
+        
+        | "Convert help to bytes level 2" >> beam.Map(ConvertToBytes)
+        | "Write to PubSub topic ayudantes-events level 2" >> WriteToPubSub(topic=args.volunteers_topic, with_attributes=False)
+        )
 
 
 if __name__ == '__main__':
