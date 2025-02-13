@@ -65,8 +65,8 @@ class AddAttempts(beam.DoFn):
                 if item["attempts"] >= 5:
                     item["max_attempts_reached"] = True
                     logging.info(f"Se ha alcanzado el límite de intentos para el mensaje del voluntario {item['id']}.")
-                yield category, ([], volunteer_data)
-                logging.info(f"Mensaje saliente voluntarios: {category, ([], volunteer_data)}")
+            yield category, ([], volunteer_data)
+            logging.info(f"Mensaje saliente voluntarios: {category, ([], volunteer_data)}")
 
 # Filter messages that have reached 5 attempts
 class HandleMaxAttempts(beam.DoFn):
@@ -77,7 +77,7 @@ class HandleMaxAttempts(beam.DoFn):
         #     return
         if help_data:
             for item in help_data:
-                if "max_attempts_reached" in item:
+                if item.get("max_attempts_reached") == True:
                     yield beam.pvalue.TaggedOutput('bigquery', element)
                     logging.info(f"it has been tagged as BQ:{element}")
                 else:
@@ -85,7 +85,7 @@ class HandleMaxAttempts(beam.DoFn):
 
         if volunteer_data:
             for item in volunteer_data:
-                if "max_attempts_reached" in item:
+                if item.get("max_attempts_reached") == True:
                     yield beam.pvalue.TaggedOutput('bigquery', element)
                     logging.info(f"It has been tagged as bigquery {element}")
                 else:
@@ -271,10 +271,10 @@ class StoreBigQueryNotMatched(beam.DoFn):
         
     def setup(self):
         self.client = bigquery.Client(project=self.project_id)
-        
-    def process(self, element):
+    
+    def process(self,element):
         if element is None:
-            logging.error("No element received in BQ")
+            logging.error(f"No element received in BQ {element}")
             return
         try:
             category, (help_data, volunteer_data) = element
@@ -282,45 +282,43 @@ class StoreBigQueryNotMatched(beam.DoFn):
             logging.error(f"Error unpacking element {element}: {str(e)}")
             return
         
+        if help_data and not volunteer_data:
+            self.store_in_bigquery(category, help_data, 'unmatched_requests')  # Tabla para necesitados
+        elif volunteer_data and not help_data:
+            self.store_in_bigquery(category, volunteer_data, 'unmatched_volunteers')  # Tabla para voluntarios
+        else:
+            logging.error("Both 'help_data' and 'volunteer_data' are present, skipping.")
+    
+    def store_in_bigquery(self, category, data_list, event):
+        table = f"{self.project_id}.{self.dataset_id}.unmatched_{event}s"
         
-        # Diccionario de tablas para BigQuery
-        tables = {
-            'request': f"{self.project_id}.{self.dataset_id}.unmatched_requests",
-            'volunteer': f"{self.project_id}.{self.dataset_id}.unmatched_volunteers"
-        }
+        for record in data_list:
+            try:
+                if not record:
+                    logging.warning("Skipping empty record")
+                    continue
 
-        for event in ['request', 'volunteer']:
-            data_list = volunteer_data if event == 'volunteer' else help_data
-            if data_list:
-                for record in data_list:
+                record['categoria'] = category
+                record['insertion_timestamp'] = datetime.now().isoformat()
+            
+                if 'created_at' in record:
                     try:
-                        if not record:
-                            logging.warning("Skipping empty record")
-                            continue
+                        record['created_at'] = datetime.fromisoformat(record['created_at']).isoformat()
+                    except ValueError as e:
+                        logging.error(f"Error parsing 'created_at' for record {record['id']}: {e}")
+                        continue
 
-                        record['categoria'] = category
-                        record['insertion_timestamp'] = datetime.now().isoformat()
-                    
-                        if 'created_at' in record:
-                            try:
-                                record['created_at'] = datetime.fromisoformat(record['created_at']).isoformat()
-                            except ValueError as e:
-                                logging.error(f"Error parsing 'created_at' for record {record['id']}: {e}")
-                                continue
-
-                        errors = self.client.insert_rows_json(
-                            tables[event],
-                            [record]
-                        )
-                        if errors:
-                            logging.error(f"Error inserting rows into {event} table: {errors}")
-                        else:
-                            logging.info(f"Successfully inserted record {record['id']} into {event} table")
-                    except Exception as err:
-                        logging.error(f"Error storing {event} record {record['id']}: {err}")
-        
-
-
+                # Insertar el registro en BigQuery
+                errors = self.client.insert_rows_json(
+                    table,
+                    [record]
+                )
+                if errors:
+                    logging.error(f"Error inserting rows into {event} table: {errors}")
+                else:
+                    logging.info(f"Successfully inserted record {record['id']} into {event} table")
+            except Exception as err:
+                logging.error(f"Error storing {event} record {record['id']}: {err}")
  
 
 def run():
@@ -419,6 +417,8 @@ def run():
             | "Record attempts to match volunteer" >> beam.ParDo(AddAttempts())
             | "Handle max attempts for volunteers" >> beam.ParDo(HandleMaxAttempts()).with_outputs('bigquery', 'valid')
         )
+        max_attempts_handler_vol.bigquery | "Log bigquery output 2" >> beam.Map(lambda x: logging.info(f"Volunteer going to BigQuery: {x}"))
+
 
         # Send attempts > 5 to Big Query (tag = bigquery)
         (
@@ -464,54 +464,54 @@ def run():
         #     | "Write to PubSub topic Output" >> beam.io.WriteToPubSub(topic=args.output_topic, with_attributes=False)
         # )
         
-        # Separate data to enable reprocessing (tag = not matched_users)
-        second_resend_request, second_resend_volunteer = (
-            filtered_data.not_matched_users
-                | "Remove distance" >> beam.Map(RemoveDistance)
-                | "Separate help and volunteer" >> beam.FlatMap(lambda z: [
-                (z[0], ([z[1].get('request', {})], [])),
-                (z[0], ([], [z[1].get('volunteer', {})]))
-                ])
-        # Partition to separate help and volunteer
-                | "Partition help and volunteer second match filter" >> beam.Partition(lambda kv, _: 0 if len(kv[1][0]) > 0 else 1, 2)
-        )
+        # # Separate data to enable reprocessing (tag = not matched_users)
+        # second_resend_request, second_resend_volunteer = (
+        #     filtered_data.not_matched_users
+        #         | "Remove distance" >> beam.Map(RemoveDistance)
+        #         | "Separate help and volunteer" >> beam.FlatMap(lambda z: [
+        #         (z[0], ([z[1].get('request', {})], [])),
+        #         (z[0], ([], [z[1].get('volunteer', {})]))
+        #         ])
+        # # Partition to separate help and volunteer
+        #         | "Partition help and volunteer second match filter" >> beam.Partition(lambda kv, _: 0 if len(kv[1][0]) > 0 else 1, 2)
+        # )
 
-        # Add attempts and send to PubSub topics
-        max_attempts_handler_req_2 = (
-            second_resend_request
-            | "Record attempts to match request level 2" >> beam.ParDo(AddAttempts())
-            | "Handle max attempts for request level 2" >> beam.ParDo(HandleMaxAttempts()).with_outputs('bigquery','valid')
-         )
-        max_attempts_handler_vol_2 = (
-            second_resend_volunteer 
-            | "Record attempts to match volunteer level 2" >> beam.ParDo(AddAttempts())
-            | "Handle max attempts for volunteers" >> beam.ParDo(HandleMaxAttempts()).with_outputs('bigquery', 'valid')
-        )
+        # # Add attempts and send to PubSub topics
+        # max_attempts_handler_req_2 = (
+        #     second_resend_request
+        #     | "Record attempts to match request level 2" >> beam.ParDo(AddAttempts())
+        #     | "Handle max attempts for request level 2" >> beam.ParDo(HandleMaxAttempts()).with_outputs('bigquery','valid')
+        #  )
+        # max_attempts_handler_vol_2 = (
+        #     second_resend_volunteer 
+        #     | "Record attempts to match volunteer level 2" >> beam.ParDo(AddAttempts())
+        #     | "Handle max attempts for volunteers level 2" >> beam.ParDo(HandleMaxAttempts()).with_outputs('bigquery', 'valid')
+        # )
 
-        (
-            max_attempts_handler_req_2.bigquery
-            | "Send requests (>5) to BigQuery level 2" >> beam.ParDo(StoreBigQueryNotMatched(
-            project_id=args.project_id, dataset_id=args.bigquery_dataset))
-        )
+        # (
+        #     max_attempts_handler_req_2.bigquery
+        #     | "Send requests (>5) to BigQuery level 2" >> beam.ParDo(StoreBigQueryNotMatched(
+        #     project_id=args.project_id, dataset_id=args.bigquery_dataset))
+        # )
 
-        (   
-            max_attempts_handler_vol_2.bigquery
-            | "Send volunteers (>5) to BigQuery level 2" >> beam.ParDo(StoreBigQueryNotMatched(
-            project_id=args.project_id, dataset_id=args.bigquery_dataset))
-        )
+        # (   
+        #     max_attempts_handler_vol_2.bigquery
+        #     | "Send volunteers (>5) to BigQuery level 2" >> beam.ParDo(StoreBigQueryNotMatched(
+        #     project_id=args.project_id, dataset_id=args.bigquery_dataset))
+        # )
 
-        valid_requests_2 = (
-        max_attempts_handler_req_2.valid
-        | "Convert request to bytes level 2" >> beam.Map(ConvertToBytes)
-        | "Write to PubSub topic ayudantes-events level 2" >> WriteToPubSub(topic=args.help_topic, with_attributes=False)
-        )
+        # valid_requests_2 = (
+        # max_attempts_handler_req_2.valid
+        # | "Convert request to bytes level 2" >> beam.Map(ConvertToBytes)
+        # | "Write to PubSub topic necesitados-events level 2" >> WriteToPubSub(topic=args.help_topic, with_attributes=False)
+        # )
 
-        valid_volunteers_2 = (
-            max_attempts_handler_vol_2.valid
+        # valid_volunteers_2 = (
+        #     max_attempts_handler_vol_2.valid
         
-        | "Convert help to bytes level 2" >> beam.Map(ConvertToBytes)
-        | "Write to PubSub topic ayudantes-events level 2" >> WriteToPubSub(topic=args.volunteers_topic, with_attributes=False)
-        )
+        # | "Convert help to bytes level 2" >> beam.Map(ConvertToBytes)
+        # | "Write to PubSub topic ayudantes-events level 2" >> WriteToPubSub(topic=args.volunteers_topic, with_attributes=False)
+        # )
 
 
 if __name__ == '__main__':
