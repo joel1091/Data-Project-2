@@ -2,7 +2,6 @@ import apache_beam as beam
 from apache_beam.runners import DataflowRunner
 from apache_beam.options.pipeline_options import PipelineOptions
 import apache_beam.transforms.window as window
-from apache_beam.metrics import Metrics
 from google.cloud import bigquery
 from apache_beam.io import WriteToPubSub
 
@@ -28,11 +27,22 @@ def RemoveDistance(data_list):
     
 # Clean message before resending to PubSub
 def ConvertToBytes(element):
-    cleaned_message = {}
+    cleaned_message = None
     if element:
-        for item in element:
-            cleaned_message = item 
-    # logging.info(f"Mensaje limpio: {cleaned_message}")
+        category, (help_data, volunteer_data) = element
+        logging.info(f"Datos de ayuda: {help_data}")
+        logging.info(f"Datos de voluntarios: {volunteer_data}")
+
+        if volunteer_data:
+            cleaned_message = volunteer_data[0] if volunteer_data else None
+        elif help_data:
+            cleaned_message = help_data[0] if help_data else None
+
+    if not cleaned_message:
+        logging.warning("No se encontró ningún mensaje válido.")
+        return False
+
+    logging.info(f"Mensaje limpio: {cleaned_message}")
     message_bytes = json.dumps(cleaned_message).encode('utf-8')
     return message_bytes
 
@@ -62,7 +72,8 @@ class AddAttempts(beam.DoFn):
                     item["max_attempts_reached"] = True
                     # TBC: Almacenar en BigQuery ?
                 else:
-                    pass
+                    logging.info(f"Mensaje saliente ayuda: {element}")
+                    yield help_data
 
         if volunteer_data:
             for item in volunteer_data:
@@ -73,15 +84,9 @@ class AddAttempts(beam.DoFn):
                     return False
                     # TBC: Almacenar en BigQuery ?
                 else:
-                    pass
-
-        if help_data:
-            logging.info(f"Mensaje saliente: {element}")
-            yield help_data
-        if volunteer_data:
-            logging.info(f"Mensaje saliente voluntarios: {element}")
-            yield volunteer_data
-            
+                    logging.info(f"Mensaje saliente voluntarios: {element}")
+                    yield help_data
+        
 
 # Filter by distance
 class FilterbyDistance(beam.DoFn):
@@ -383,12 +388,14 @@ def run():
         (
             resend_request 
             | "Record attempts to match request" >> beam.ParDo(AddAttempts())
+            | "Delete empty request messages (>5)" >> beam.Filter(lambda x: x is not None) 
             | "Convert request to bytes" >> beam.Map(ConvertToBytes)
             | "Write to PubSub topic ayudantes-events" >> WriteToPubSub(topic=args.volunteers_topic, with_attributes=False)
         )
         (
             resend_volunteer 
             | "Record attempts to match volunteer" >> beam.ParDo(AddAttempts())
+            | "Delete empty volunteer messages (>5)" >> beam.Filter(lambda x: x is not None) 
             | "Convert help to bytes" >> beam.Map(ConvertToBytes)
             | "Write to PubSub topic necesitados-events" >> WriteToPubSub(topic=args.help_topic, with_attributes=False)
         )
