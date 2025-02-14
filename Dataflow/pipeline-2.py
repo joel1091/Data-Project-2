@@ -222,7 +222,7 @@ def run():
         (
             max_attempts_data
             | "encode para eliminar" >> beam.Map(lambda x: json.dumps(x).encode('utf-8'))
-            | "send to deadletter" >> WriteToPubSub(topic=args.output_topic, with_attributes=False)¡
+            | "send to deadletter" >> WriteToPubSub(topic=args.output_topic, with_attributes=False)
          )
         
         # Messages with attempts < 5, clasify by help/volunteer and convert to bytes (for PubSub)
