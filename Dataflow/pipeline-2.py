@@ -18,6 +18,17 @@ def ParsePubSubMessage(message):
     msg = json.loads(pubsub_message)
     return msg['categoria'], msg
 
+# Indicate schema/value
+def FormatBigQueryMatched(element):
+    categoria, data = element
+    return {
+        "match_id": str(uuid.uuid4()), 
+        "categoria": categoria,
+        "help": json.dumps(data["help"]),
+        "volunteer": json.dumps(data["volunteer"]),
+        "distance": data["distance"]
+    }
+
 # class AddAttempts(beam.DoFn):
 def AddAttempts(element):
     item = element
@@ -79,27 +90,24 @@ class FilterbyDistance(beam.DoFn):
             if len(element[1][0]) > 0:
                 help_data = element[1][0][0]
                 yield beam.pvalue.TaggedOutput("not_matched_users", help_data)
-                # logging.info(f"HELP - SECOND LEVEL: {help_data}")  
+                logging.info(f"HELP - SECOND LEVEL: {help_data}")  
             elif len(element[1][1]) > 0:
                 volunteer_data = element[1][1][0]
                 yield beam.pvalue.TaggedOutput("not_matched_users", volunteer_data)
-                # logging.info(f"VOLUNTEER - SECOND LEVEL: {volunteer_data}")
+                logging.info(f"VOLUNTEER - SECOND LEVEL: {volunteer_data}")
 
 
 class PrepareForPubSub(beam.DoFn):
+    @staticmethod
     def ConvertToBytes(element):
-        data = element
-        message_bytes = json.dumps(data).encode('utf-8')
+        message_bytes = json.dumps(element).encode('utf-8')
         return message_bytes
 
     def process(self,element):
-        data = element
-        if data["nivel_urgencia"]:
-            self.ConvertToBytes()
-            yield beam.pvalue.TaggedOutput("help", data)
-        if data["radio_disponible_km"]:
-            self.ConvertToBytes()
-            yield beam.pvalue.TaggedOutput("volunteer", data)            
+        if element.get("nivel_urgencia"):
+            yield beam.pvalue.TaggedOutput("help", self.ConvertToBytes(element))
+        if element.get("radio_disponible_km"):
+            yield beam.pvalue.TaggedOutput("volunteer", self.ConvertToBytes(element))            
 
 
 def run():
@@ -112,7 +120,7 @@ def run():
     
     parser.add_argument(
                 '--help_topic',
-                required=False,
+                required=True,
                 help='PubSub topicc used for writing help requests data.')
 
     parser.add_argument(
@@ -122,7 +130,7 @@ def run():
     
     parser.add_argument(
                 '--volunteers_topic',
-                required=False,
+                required=True,
                 help='PubSub topicc used for writing volunteers requests data.')
     
     parser.add_argument(
@@ -132,7 +140,7 @@ def run():
     
     parser.add_argument(
                 '--bigquery_dataset',
-                required=False,
+                required=True,
                 help='The BigQuery dataset where matched users will be stored.')
     
     parser.add_argument(
@@ -154,62 +162,77 @@ def run():
             p
                 | "Read help data from PubSub" >> beam.io.ReadFromPubSub(subscription=args.help_subscription)
                 | "Parse JSON help messages" >> beam.Map(ParsePubSubMessage)
-                | "Sliding Window for help data" >> beam.WindowInto(beam.window.SlidingWindows(60, 5)) ## timing TBD
+                | "Fixed Window for help data" >> beam.WindowInto(beam.window.FixedWindows(60))
         )
 
         volunteer_data = (
             p
                 | "Read volunteer data from PubSub" >> beam.io.ReadFromPubSub(subscription=args.volunteers_subscription)
                 | "Parse JSON volunteer messages" >> beam.Map(ParsePubSubMessage)
-                | "Sliding Window for volunteer data" >> beam.WindowInto(beam.window.SlidingWindows(60, 5)) ## timing TBD
+                | "Sliding Window for volunteer data" >> beam.WindowInto(beam.window.FixedWindows(60))
         )
 
-        # CoGroupByKey
+        volunteer_data | "Logs mensaje voluntario" >> beam.Map(lambda x: f"Mensaje entrando: {x}")
+
+        # CoGroupByKey & Filter by Distance (depending on "radio_disponible_km" of the volunteer)
         grouped_data = ( 
             (help_data,volunteer_data)
             | "Merge PCollections" >> beam.CoGroupByKey()
             | "Match by Distance" >> beam.ParDo(FilterbyDistance()).with_outputs("matched_users", "not_matched_users")
         )
 
-    #     grouped_data.matched_users | "Write matches to BigQuery" >> beam.io.WriteToBigQuery(
-    #     table=f"{args.project_id}:{args.bigquery_dataset}.matched_pairs",
-    #     schema = {     "fields": [         
-    #         {"name": "categoria",  "type": "STRING", "mode": "NULLABLE"},         
-    #         {"name": "help",       "type": "STRING", "mode": "NULLABLE"},         
-    #         {"name": "volunteer",  "type": "STRING", "mode": "NULLABLE"},         
-    #         {"name": "distance", "type": "FLOAT", "mode": "NULLABLE"} ] },
-    #     write_disposition=beam.io.BigQueryDisposition.WRITE_APPEND,
-    #     create_disposition=beam.io.BigQueryDisposition.CREATE_IF_NEEDED
-    # )
+        grouped_data.not_matched_users | "Logs not matched" >> beam.Map(lambda x: f"No hay match: {x}")
 
+        # For tag = matched_users, correct format
+        formated_matched_data = (
+            grouped_data.matched_users
+            | "Format matched data for BigQuery" >> beam.Map(FormatBigQueryMatched)
+        )
+        # Insert matches to BigQuery
+        formated_matched_data | "Write matches to BigQuery" >> beam.io.WriteToBigQuery(
+        table=f"{args.project_id}:{args.bigquery_dataset}.matched_pairs",
+        schema = {
+        "fields": [
+            {"name": "match_id", "type": "STRING", "mode": "NULLABLE"},
+            {"name": "categoria", "type": "STRING", "mode": "NULLABLE"},
+            {"name": "help", "type": "STRING", "mode": "NULLABLE"},
+            {"name": "volunteer", "type": "STRING", "mode": "NULLABLE"},
+            {"name": "distance", "type": "FLOAT", "mode": "NULLABLE"}
+        ]},
+        write_disposition=beam.io.BigQueryDisposition.WRITE_APPEND,
+        create_disposition=beam.io.BigQueryDisposition.CREATE_IF_NEEDED
+    )
+        
+        # For tag = not_matched_users, add "attempts"
         with_attempts = (
             grouped_data.not_matched_users| "Add attempt" >> beam.Map(AddAttempts)
         )
+
+        # with_attempts | "Logs attempts" >> beam.Map(lambda x: f"Mensaje con intentos: {x}")
         
+        # Messages with attempts, check if attempts > = 5
         max_attempts_data, valid_data = (
         with_attempts
-        | "Partitions Max / Valid" >> beam.Partition(
-        lambda element, _: 0 if element["attempts"] >= 5 else 1, 2 
-    ))
+        | "Partitions Max / Valid" >> beam.Partition(lambda element, _: 0 if element["attempts"] >= 5 else 1, 2 ))
 
+        # max_attempts_data | "Logs max attempts" >> beam.Map(lambda x: f"MÁXIMO: {x}")
+
+        # TEMPORARY (PCol should be sent to BQ)
+        # count_attempt.max_attempts | "Write to Big Query not matched" >> beam.io.WriteToBigQuery()
         (
             max_attempts_data
             | "encode para eliminar" >> beam.Map(lambda x: json.dumps(x).encode('utf-8'))
-            | "send to deadletter" >> WriteToPubSub(topic="projects/total-glider-447114-u4/topics/output-topic", with_attributes=False)
+            | "send to deadletter" >> WriteToPubSub(topic=args.output_topic, with_attributes=False)¡
          )
-        # count_attempt.max_attempts | "Write to Big Query not matched" >> beam.io.WriteToBigQuery()
-
-        max_attempts_data | "Logs attempts" >> beam.Map(lambda x: logging.info(f"Máximo alcanzado: {x}"))
         
-
+        # Messages with attempts < 5, clasify by help/volunteer and convert to bytes (for PubSub)
         help_volunteer = (
             valid_data
             | "Differentiate and Convert to bytes" >> beam.ParDo(PrepareForPubSub()).with_outputs("help", "volunteer")
             )
         
-
+        # Resend valid messages to both topics: help and volunteers
         help_volunteer.help | "Resend help to PubSub" >> WriteToPubSub(topic=args.help_topic, with_attributes=False)
-
         help_volunteer.volunteer | "Resend volunteer to PubSub" >> WriteToPubSub(topic=args.volunteers_topic, with_attributes=False)
         
 
