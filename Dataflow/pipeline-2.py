@@ -47,7 +47,6 @@ def partition_by_attempts(element, num_partitions):
 # Filter by distance
 class FilterbyDistance(beam.DoFn):
     @staticmethod
-    # Calculate distance based on coordinates
     def haversine(lat1, lon1, lat2, lon2):
         R = 6371
         lat1, lon1, lat2, lon2 = map(math.radians, [lat1, lon1, lat2, lon2])
@@ -57,12 +56,16 @@ class FilterbyDistance(beam.DoFn):
         c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
         return R * c  
     
-    # Filter by distance according to "radio_disponible_km" & tag not_matched_users and matched_users
     def process(self, element):
         category, (help_data, volunteer_data) = element
+        
+        # Inicializamos los sets para trackear los IDs
+        matched_helps = set()
+        matched_volunteers = set()
 
-        if len(element[1][0]) and len(element[1][1]) > 0:
+        if len(help_data) and len(volunteer_data) > 0:
             for help in help_data:
+                found_match = False  # Flag para controlar si encontramos match
                 lat_request, lon_request = map(float, help['ubicacion'].split(','))
 
                 for volunteer in volunteer_data:
@@ -71,28 +74,40 @@ class FilterbyDistance(beam.DoFn):
 
                     distance = self.haversine(lat_volunteer, lon_volunteer, lat_request, lon_request)
 
-                    data = (category, {"help": help, 
-                                    "volunteer": volunteer, 
-                                    "distance": distance})
-
                     if distance <= radio_max:
+                        data = (category, {
+                            "help": help,
+                            "volunteer": volunteer,
+                            "distance": distance
+                        })
                         yield beam.pvalue.TaggedOutput("matched_users", data)
-                        logging.info(f"Match found: {data}")
-                    else:
-                        yield beam.pvalue.TaggedOutput("not_matched_users", help)
-                        logging.info(f"HELP - FIRST LEVEL: {help}")
-                        yield beam.pvalue.TaggedOutput("not_matched_users", volunteer) 
-                        logging.info(f"VOLUNTEER - FIRST LEVEL: {volunteer}")
+                        matched_helps.add(help['id'])
+                        matched_volunteers.add(volunteer['id'])
+                        found_match = True
+                        logging.info(f"Match found - Help ID: {help['id']}, Volunteer ID: {volunteer['id']}")
+                        break  # Salimos del loop interno una vez encontrado el match
+                
+                # Si no se encontró match y el help no está en matched_helps
+                if not found_match:
+                    yield beam.pvalue.TaggedOutput("not_matched_users", help)
+                    logging.info(f"No match found for Help ID: {help['id']}")
+
+            # Procesar volunteers no emparejados
+            for volunteer in volunteer_data:
+                if volunteer['id'] not in matched_volunteers:
+                    yield beam.pvalue.TaggedOutput("not_matched_users", volunteer)
+                    logging.info(f"No match found for Volunteer ID: {volunteer['id']}")
 
         else:
-            if len(element[1][0]) > 0:
+            # Caso donde uno de los grupos está vacío
+            if len(help_data) > 0:
                 for help_item in help_data:
-                    yield beam.pvalue.TaggedOutput("not_matched_users", help_item) 
-                    logging.info(f"HELP - SECOND LEVEL: {help_item}")
-            elif len(element[1][1]) > 0:
+                    yield beam.pvalue.TaggedOutput("not_matched_users", help_item)
+                    logging.info(f"No volunteers available for Help ID: {help_item['id']}")
+            elif len(volunteer_data) > 0:
                 for volunteer_item in volunteer_data:
                     yield beam.pvalue.TaggedOutput("not_matched_users", volunteer_item)
-                    logging.info(f"VOLUNTEER - SECOND LEVEL: {volunteer_item}")
+                    logging.info(f"No help requests available for Volunteer ID: {volunteer_item['id']}")
 
 
 class PrepareForPubSub(beam.DoFn):
@@ -143,8 +158,6 @@ class StoreBigQueryNotMatched(beam.DoFn):
         if "radio_disponible_km" in element:
             yield beam.pvalue.TaggedOutput("unmatched_volunteers", self.FormatBigQueryVolunteer(element))
             logging.info(f"Sending to BQ - volunteer: {element}")
-
-
 
 
 def run():
@@ -200,7 +213,7 @@ def run():
                 | "Read help data from PubSub" >> beam.io.ReadFromPubSub(subscription=args.help_subscription)
                 | "Parse JSON help messages" >> beam.Map(ParsePubSubMessage)
                 | "Fixed Window for help data" >> beam.WindowInto(
-                beam.window.FixedWindows(60),
+                beam.window.FixedWindows(30),
                 accumulation_mode=AccumulationMode.DISCARDING
             )
                 | "Convert to tuple (categoria, id, data) for help" >> beam.Map(lambda kv: (kv[0], kv[1]['id'], kv[1]))  
@@ -213,7 +226,7 @@ def run():
                 | "Read volunteer data from PubSub" >> beam.io.ReadFromPubSub(subscription=args.volunteers_subscription)
                 | "Parse JSON volunteer messages" >> beam.Map(ParsePubSubMessage)
                 | "Fixed Window for volunteer data" >> beam.WindowInto(
-                beam.window.FixedWindows(60),
+                beam.window.FixedWindows(30),
                 accumulation_mode=AccumulationMode.DISCARDING
             )
                 | "Convert to tuple (categoria, id, data) for volunteers" >> beam.Map(lambda kv: (kv[0], kv[1]['id'], kv[1]))  
@@ -328,9 +341,4 @@ if __name__ == '__main__':
 
     run()
         
-
-
-
-
-
 
