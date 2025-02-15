@@ -14,12 +14,28 @@ variable "zone" {
   type        = string
 }
 
-variable "build_bucket" {
-  description = "Nombre del bucket de Cloud Storage para subir el contexto de build"
+variable "repository_id" {
+  description = "El ID del repositorio"
+  type        = string  
+}
+
+variable "image_name" {
+  description = "Nombre de la imagen Docker"
   type        = string
 }
 
-# variable "dataflow_template_gcs_path" {
-#   description = "Ruta al Dataflow Flex Template en GCS"
-#   type        = string
-# }
+variable "tag" {
+  description = "Etiqueta para la imagen Docker"
+  type        = string
+}
+
+variable "build_context_dir" {
+  description = "Directorio de contexto para la construcción de la imagen Docker."
+  type        = string
+}
+
+variable "job_name" {
+  description = "Nombre del trabajo de Cloud Build"
+  type        = string
+}
+
