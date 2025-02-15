@@ -10,7 +10,7 @@ from folium.plugins import MousePosition
 from geopy.geocoders import Nominatim
 
 # Configuración de Pub/Sub
-project_id = '<PROJECT_ID>' 
+project_id = '<GCP_PROJECT_ID>' 
 topic_id = 'necesitados-events'  
 
 # Inicializar el cliente de Pub/Sub

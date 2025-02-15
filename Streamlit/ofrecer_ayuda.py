@@ -11,7 +11,7 @@ from geopy.geocoders import Nominatim
 from folium import plugins
 
 # Configuración de Pub/Sub
-project_id = '<PROJECT_ID>'
+project_id = '<GCP_PROJECT_ID>'
 topic_id = 'ayudantes-events'  
 
 # Inicializar el cliente de Pub/Sub

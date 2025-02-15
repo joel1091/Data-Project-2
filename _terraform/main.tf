@@ -74,5 +74,37 @@ module "cloud_run_automatic" {
   depends_on = [module.artifact_registry, module.cloudbuild_launcher_automatic]
 }
 
+module "sa_cloud_run_service" {
+  source       = "./modules/service_accounts"
+  account_id   = "cloud-run-service-sa"
+  display_name = "Service Account for Cloud Run Service"
+  project_id   = var.project_id
+  roles        = [
+    "roles/pubsub.subscriber",  
+    "roles/pubsub.publisher"    
+  ]
+}
 
 
+module "cloudbuildservice_submit" {
+  source                     = "./modules/cloudbuildservice_submit"
+  region                     = var.region
+  project_id                 = var.project_id
+  tag                        = var.tag
+  service_name               = var.service_name
+  artifact_registry_repository = module.artifact_registry.repository_id
+  build_context_dir_service          = var.build_context_dir_service
+
+  depends_on = [module.artifact_registry]
+}
+
+module "cloud_run_service" {
+  source                = "./modules/cloud_run_service"
+  service_name             = var.service_name
+  image_name_service      = "europe-west1-docker.pkg.dev/${var.project_id}/${var.repository_id}/${var.image_name_service}:${var.tag}"
+  region                = var.region
+  project_id            = var.project_id
+  service_account_email = module.sa_cloud_run_service.email
+
+  depends_on = [module.artifact_registry, module.cloudbuildservice_submit]
+}
