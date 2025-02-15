@@ -18,3 +18,8 @@ variable "description" {
   type        = string
   default     = ""
 }
+
+variable "service_account_email" {
+  description = "Correo electrónico de la cuenta de servicio que tendrá permisos para subir imágenes"
+  type        = string
+}

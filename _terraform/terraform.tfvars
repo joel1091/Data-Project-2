@@ -1,0 +1,8 @@
+project_id = "dataproject2425"
+region     = "europe-west1"
+zone       = "europe-west1-b"
+repository_id = "data-project2"
+image_name = "launcher-automatic"
+tag = "v1"
+build_context_dir = "../app/launcher/automatic"
+job_name = "generadores-job-automatic"
