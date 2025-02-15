@@ -98,3 +98,12 @@ module "cloudbuild_launcher_manual" {
   output_image      = "europe-west1-docker.pkg.dev/${var.project_id}/${module.artifact_registry.repository_id}/launcher-manual:v1"
   project_id        = var.project_id
 }
+
+module "cloud_run_streamlit" {
+  source = "./modules/cloud_run_service"
+  
+  project_id   = var.project_id
+  region       = var.region
+  service_name = var.service_name
+  
+}

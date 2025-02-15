@@ -41,3 +41,15 @@ output "cloudbuild_launcher_automatic_build_id" {
 output "cloudbuild_launcher_manual_build_id" {
   value = module.cloudbuild_launcher_manual.build_id
 }
+
+output "streamlit_service_url" {
+  value = module.cloud_run_streamlit.service_url
+}
+
+output "streamlit_service_name" {
+  value = module.cloud_run_streamlit.service_name
+}
+
+output "streamlit_service_region" {
+  value = module.cloud_run_streamlit.service_region
+}

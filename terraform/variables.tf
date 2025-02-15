@@ -19,6 +19,22 @@ variable "build_bucket" {
   type        = string
 }
 
+variable "service_name" {
+  description = "Name of the Cloud Run service"
+  type        = string
+  default     = "app"
+}
+
+variable "subnetwork" {
+  description = "La subred a la que se desplegará"
+  type        = string
+}
+
+variable "service_account_email" {
+  description = "El email de la cuenta de servicio a utilizar"
+  type        = string
+}
+
 # variable "dataflow_template_gcs_path" {
 #   description = "Ruta al Dataflow Flex Template en GCS"
 #   type        = string
