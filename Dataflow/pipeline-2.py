@@ -4,6 +4,7 @@ from apache_beam.options.pipeline_options import PipelineOptions
 import apache_beam.transforms.window as window
 from google.cloud import bigquery
 from apache_beam.io import WriteToPubSub
+from apache_beam.transforms.trigger import AccumulationMode
 
 from datetime import datetime
 import argparse
@@ -36,13 +37,12 @@ def AddAttempts(element):
     element["attempts"] += 1
     return element
 
-        # if item["attempts"] >= 5:
-        #     yield beam.pvalue.TaggedOutput("max_attempts", element)
 
-        # else:
-        #     yield beam.pvalue.TaggedOutput("valid", element)
-
-
+def partition_by_attempts(element, num_partitions):
+            current_attempts = element.get('attempts', 0)
+            if current_attempts >= 5:
+                return 1 
+            return 0 
 
 # Filter by distance
 class FilterbyDistance(beam.DoFn):
@@ -80,17 +80,19 @@ class FilterbyDistance(beam.DoFn):
                         logging.info(f"Match found: {data}")
                     else:
                         yield beam.pvalue.TaggedOutput("not_matched_users", help)
+                        logging.info(f"HELP - FIRST LEVEL: {help}")
                         yield beam.pvalue.TaggedOutput("not_matched_users", volunteer) 
+                        logging.info(f"VOLUNTEER - FIRST LEVEL: {volunteer}")
 
         else:
             if len(element[1][0]) > 0:
                 for help_item in help_data:
                     yield beam.pvalue.TaggedOutput("not_matched_users", help_item) 
-                    # logging.info(f"HELP - SECOND LEVEL: {help_item}")
+                    logging.info(f"HELP - SECOND LEVEL: {help_item}")
             elif len(element[1][1]) > 0:
                 for volunteer_item in volunteer_data:
                     yield beam.pvalue.TaggedOutput("not_matched_users", volunteer_item)
-                    # logging.info(f"VOLUNTEER - SECOND LEVEL: {volunteer_item}")
+                    logging.info(f"VOLUNTEER - SECOND LEVEL: {volunteer_item}")
 
 
 class PrepareForPubSub(beam.DoFn):
@@ -137,10 +139,10 @@ class StoreBigQueryNotMatched(beam.DoFn):
     def process(self, element):
         if "nivel_urgencia" in element:
             yield beam.pvalue.TaggedOutput("unmatched_requests", self.FormatBigQueryHelp(element))
-            logging.info(f"Sent to BQ - help: {element}")
+            logging.info(f"Sending to BQ - help: {element}")
         if "radio_disponible_km" in element:
             yield beam.pvalue.TaggedOutput("unmatched_volunteers", self.FormatBigQueryVolunteer(element))
-            logging.info(f"Sent to BQ - volunteer: {element}")
+            logging.info(f"Sending to BQ - volunteer: {element}")
 
 
 
@@ -197,7 +199,10 @@ def run():
             p
                 | "Read help data from PubSub" >> beam.io.ReadFromPubSub(subscription=args.help_subscription)
                 | "Parse JSON help messages" >> beam.Map(ParsePubSubMessage)
-                | "Fixed Window for help data" >> beam.WindowInto(beam.window.FixedWindows(60))
+                | "Fixed Window for help data" >> beam.WindowInto(
+                beam.window.FixedWindows(60),
+                accumulation_mode=AccumulationMode.DISCARDING
+            )
                 | "Convert to tuple (categoria, id, data) for help" >> beam.Map(lambda kv: (kv[0], kv[1]['id'], kv[1]))  
                 | "Remove duplicates by help id" >> beam.Distinct()  
                 | "Restore key-value structure for help" >> beam.Map(lambda x: (x[0], x[2]))
@@ -207,7 +212,10 @@ def run():
             p
                 | "Read volunteer data from PubSub" >> beam.io.ReadFromPubSub(subscription=args.volunteers_subscription)
                 | "Parse JSON volunteer messages" >> beam.Map(ParsePubSubMessage)
-                | "Sliding Window for volunteer data" >> beam.WindowInto(beam.window.FixedWindows(60))
+                | "Fixed Window for volunteer data" >> beam.WindowInto(
+                beam.window.FixedWindows(60),
+                accumulation_mode=AccumulationMode.DISCARDING
+            )
                 | "Convert to tuple (categoria, id, data) for volunteers" >> beam.Map(lambda kv: (kv[0], kv[1]['id'], kv[1]))  
                 | "Remove duplicates by volunteer id" >> beam.Distinct()  
                 | "Restore key-value structure for volunteers" >> beam.Map(lambda x: (x[0], x[2]))
@@ -247,14 +255,14 @@ def run():
         
         # Messages with attempts, check if attempts > = 5. Separate in 2 partitions
         partitions = (
-        with_attempts
-        | "Partition data" >> beam.Partition(lambda element, _: 0 if element.get("attempts", 0) < 5 else 1, 2)
-    )
+            with_attempts
+            | "Partition data" >> beam.Partition(partition_by_attempts, 2)
+        )
         valid_data = partitions[0]
         max_attempts_data = partitions[1]
-    
 
-        # max_attempts_data | "Print" >> beam.Map(lambda x: print(f"MAXED OUT {x}"))
+        max_attempts_data | "Log max attempts partition" >> beam.Map(lambda x: logging.info(f"Maxed out: {x}"))
+
 
         # Partition 1 has reached max attempts and we send them to BigQuery
         send_BQ = (
@@ -301,7 +309,7 @@ def run():
         create_disposition=beam.io.BigQueryDisposition.CREATE_IF_NEEDED
         )
         
-        # Messages with attempts < 5, clasify by help/volunteer and convert to bytes (for PubSub)
+        # Partition 0: Messages with attempts < 5, clasify by help/volunteer and convert to bytes (for PubSub)
         help_volunteer = (
             valid_data
             | "Differentiate and Convert to bytes" >> beam.ParDo(PrepareForPubSub()).with_outputs("help", "volunteer")
