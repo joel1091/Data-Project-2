@@ -29,7 +29,7 @@ def FormatBigQueryMatched(element):
         "distance": data["distance"]
     }
 
-# class AddAttempts(beam.DoFn):
+# Add attempts to unmatched messages
 def AddAttempts(element):
     item = element
     if "attempts" not in item:
@@ -109,6 +109,43 @@ class PrepareForPubSub(beam.DoFn):
         if element.get("radio_disponible_km"):
             yield beam.pvalue.TaggedOutput("volunteer", self.ConvertToBytes(element))            
 
+# Store not matched in BigQuery after 5 attempts
+class StoreBigQueryNotMatched(beam.DoFn):
+    def FormatBigQueryHelp(self, element):
+        return {
+            "id": element["id"],
+            "nombre": element["nombre"],
+            "ubicacion": element["ubicacion"],
+            "poblacion": element["poblacion"],
+            "categoria": element["categoria"],
+            "descripcion": element["descripcion"],
+            "created_at": element["created_at"],
+            "nivel_urgencia": element["nivel_urgencia"],
+            "telefono": element["telefono"],
+            "attempts": element["attempts"],
+            "insertion_timestamp": datetime.now().isoformat()
+        }
+    def FormatBigQueryVolunteer(self, element):
+        return {
+            "id": element["id"],
+            "nombre": element["nombre"],
+            "ubicacion": element["ubicacion"],
+            "poblacion": element["poblacion"],
+            "categoria": element["categoria"],
+            "radio_disponible_km": element["radio_disponible_km"],
+            "created_at": element["created_at"],
+            "attempts": element["attempts"],
+            "insertion_timestamp": datetime.now().isoformat()
+        }
+
+    def process(self, element):
+        if "nivel_urgencia" in element:
+            yield beam.pvalue.TaggedOutput("unmatched_requests", self.FormatBigQueryHelp(element))
+        if "radio_disponible_km" in element:
+            yield beam.pvalue.TaggedOutput("unmatched_volunteers", self.FormatBigQueryVolunteer(element))
+
+
+
 
 def run():
     parser = argparse.ArgumentParser(description=('Input arguments for the Dataflow Streaming Pipeline.'))
@@ -121,7 +158,7 @@ def run():
     parser.add_argument(
                 '--help_topic',
                 required=True,
-                help='PubSub topicc used for writing help requests data.')
+                help='PubSub topic used for writing help requests data.')
 
     parser.add_argument(
                 '--help_subscription',
@@ -131,7 +168,7 @@ def run():
     parser.add_argument(
                 '--volunteers_topic',
                 required=True,
-                help='PubSub topicc used for writing volunteers requests data.')
+                help='PubSub topic used for writing volunteers requests data.')
     
     parser.add_argument(
                 '--volunteers_subscription',
@@ -157,12 +194,15 @@ def run():
     
     # Pipeline Object
     with beam.Pipeline(argv=pipeline_opts,options=options) as p:
-
+        # Read from PubSub & transformations to the correct format
         help_data = (
             p
                 | "Read help data from PubSub" >> beam.io.ReadFromPubSub(subscription=args.help_subscription)
                 | "Parse JSON help messages" >> beam.Map(ParsePubSubMessage)
                 | "Fixed Window for help data" >> beam.WindowInto(beam.window.FixedWindows(60))
+                | "Convert to tuple (categoria, id, data) for help" >> beam.Map(lambda kv: (kv[0], kv[1]['id'], kv[1]))  
+                | "Remove duplicates by help id" >> beam.Distinct()  
+                | "Restore key-value structure for help" >> beam.Map(lambda x: (x[0], x[2]))
         )
 
         volunteer_data = (
@@ -170,9 +210,10 @@ def run():
                 | "Read volunteer data from PubSub" >> beam.io.ReadFromPubSub(subscription=args.volunteers_subscription)
                 | "Parse JSON volunteer messages" >> beam.Map(ParsePubSubMessage)
                 | "Sliding Window for volunteer data" >> beam.WindowInto(beam.window.FixedWindows(60))
+                | "Convert to tuple (categoria, id, data) for volunteers" >> beam.Map(lambda kv: (kv[0], kv[1]['id'], kv[1]))  
+                | "Remove duplicates by volunteer id" >> beam.Distinct()  
+                | "Restore key-value structure for volunteers" >> beam.Map(lambda x: (x[0], x[2]))
         )
-
-        volunteer_data | "Logs mensaje voluntario" >> beam.Map(lambda x: f"Mensaje entrando: {x}")
 
         # CoGroupByKey & Filter by Distance (depending on "radio_disponible_km" of the volunteer)
         grouped_data = ( 
@@ -181,9 +222,7 @@ def run():
             | "Match by Distance" >> beam.ParDo(FilterbyDistance()).with_outputs("matched_users", "not_matched_users")
         )
 
-        grouped_data.not_matched_users | "Logs not matched" >> beam.Map(lambda x: f"No hay match: {x}")
-
-        # For tag = matched_users, correct format
+        # For tag matched_users, correct format to insert to BigQuery
         formated_matched_data = (
             grouped_data.matched_users
             | "Format matched data for BigQuery" >> beam.Map(FormatBigQueryMatched)
@@ -203,27 +242,61 @@ def run():
         create_disposition=beam.io.BigQueryDisposition.CREATE_IF_NEEDED
     )
         
-        # For tag = not_matched_users, add "attempts"
+        # For tag not_matched_users, add field "attempts"
         with_attempts = (
             grouped_data.not_matched_users| "Add attempt" >> beam.Map(AddAttempts)
         )
-
-        # with_attempts | "Logs attempts" >> beam.Map(lambda x: f"Mensaje con intentos: {x}")
         
-        # Messages with attempts, check if attempts > = 5
+        # Messages with attempts, check if attempts > = 5. Separate in 2 partitions
         max_attempts_data, valid_data = (
         with_attempts
         | "Partitions Max / Valid" >> beam.Partition(lambda element, _: 0 if element["attempts"] >= 5 else 1, 2 ))
 
-        # max_attempts_data | "Logs max attempts" >> beam.Map(lambda x: f"MÁXIMO: {x}")
 
-        # TEMPORARY (PCol should be sent to BQ)
-        # count_attempt.max_attempts | "Write to Big Query not matched" >> beam.io.WriteToBigQuery()
-        (
-            max_attempts_data
-            | "encode para eliminar" >> beam.Map(lambda x: json.dumps(x).encode('utf-8'))
-            | "send to deadletter" >> WriteToPubSub(topic=args.output_topic, with_attributes=False)
-         )
+        # Partition 1 has reached max attempts and we send them to BigQuery
+        send_BQ = (
+            max_attempts_data | "Format help and volunteer messages for BQ" >> beam.ParDo(StoreBigQueryNotMatched()).with_outputs("unmatched_requests", "unmatched_volunteers")
+        )
+
+        # Write to BigQuery unmatched help 
+        send_BQ.unmatched_requests | "Write to Big Query not matched help" >> beam.io.WriteToBigQuery(
+        table=f"{args.project_id}:{args.bigquery_dataset}.unmatched_requests",
+        schema = {
+        "fields": [
+            {"name": "id", "type": "STRING", "mode": "NULLABLE"},
+            {"name": "nombre", "type": "STRING", "mode": "NULLABLE"},
+            {"name": "ubicacion", "type": "STRING", "mode": "NULLABLE"},
+            {"name": "poblacion", "type": "STRING", "mode": "NULLABLE"},
+            {"name": "categoria", "type": "STRING", "mode": "NULLABLE"},
+            {"name": "descripcion", "type": "STRING", "mode": "NULLABLE"},
+            {"name": "created_at", "type": "TIMESTAMP", "mode": "NULLABLE"},
+            {"name": "nivel_urgencia", "type": "INTEGER", "mode": "NULLABLE"},
+            {"name": "telefono", "type": "STRING", "mode": "NULLABLE"},
+            {"name": "insertion_stamp", "type": "TIMESTAMP", "mode": "NULLABLE"},
+            {"name": "attempts", "type": "INTEGER", "mode": "NULLABLE"}
+        ]},
+        write_disposition=beam.io.BigQueryDisposition.WRITE_APPEND,
+        create_disposition=beam.io.BigQueryDisposition.CREATE_IF_NEEDED
+        )
+
+        # Write to BigQuery unmatched volunteers
+        send_BQ.unmatched_volunteers | "Write to Big Query not matched volunteers" >> beam.io.WriteToBigQuery(
+        table=f"{args.project_id}:{args.bigquery_dataset}.unmatched_volunteers",
+        schema = {
+        "fields": [
+            {"name": "id", "type": "STRING", "mode": "NULLABLE"},
+            {"name": "nombre", "type": "STRING", "mode": "NULLABLE"},
+            {"name": "ubicacion", "type": "STRING", "mode": "NULLABLE"},
+            {"name": "poblacion", "type": "STRING", "mode": "NULLABLE"},
+            {"name": "categoria", "type": "STRING", "mode": "NULLABLE"},
+            {"name": "radio_disponible_km", "type": "INTEGER", "mode": "NULLABLE"},
+            {"name": "created_at", "type": "TIMESTAMP", "mode": "NULLABLE"},
+            {"name": "attempts", "type": "INTEGER", "mode": "NULLABLE"},
+            {"name": "insertion_stamp", "type": "TIMESTAMP", "mode": "NULLABLE"},
+        ]},
+        write_disposition=beam.io.BigQueryDisposition.WRITE_APPEND,
+        create_disposition=beam.io.BigQueryDisposition.CREATE_IF_NEEDED
+        )
         
         # Messages with attempts < 5, clasify by help/volunteer and convert to bytes (for PubSub)
         help_volunteer = (
