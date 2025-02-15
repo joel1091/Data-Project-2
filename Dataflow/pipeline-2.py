@@ -31,11 +31,10 @@ def FormatBigQueryMatched(element):
 
 # Add attempts to unmatched messages
 def AddAttempts(element):
-    item = element
-    if "attempts" not in item:
-        item["attempts"] = 0
-    item["attempts"] += 1
-    return item
+    if "attempts" not in element:
+        element["attempts"] = 0
+    element["attempts"] += 1
+    return element
 
         # if item["attempts"] >= 5:
         #     yield beam.pvalue.TaggedOutput("max_attempts", element)
@@ -44,12 +43,13 @@ def AddAttempts(element):
         #     yield beam.pvalue.TaggedOutput("valid", element)
 
 
+
 # Filter by distance
 class FilterbyDistance(beam.DoFn):
     @staticmethod
     # Calculate distance based on coordinates
     def haversine(lat1, lon1, lat2, lon2):
-        R = 6371  # Radio de la Tierra en km
+        R = 6371
         lat1, lon1, lat2, lon2 = map(math.radians, [lat1, lon1, lat2, lon2])
         dlat = lat2 - lat1
         dlon = lon2 - lon1
@@ -62,39 +62,35 @@ class FilterbyDistance(beam.DoFn):
         category, (help_data, volunteer_data) = element
 
         if len(element[1][0]) and len(element[1][1]) > 0:
-
-            for volunteer in volunteer_data:
-                lat_volunteer, lon_volunteer = map(float, volunteer['ubicacion'].split(','))
-                radio_max = volunteer.get('radio_disponible_km')
-
             for help in help_data:
                 lat_request, lon_request = map(float, help['ubicacion'].split(','))
-                distance = self.haversine(lat_volunteer, lon_volunteer, lat_request, lon_request)
-                
-                data = (category, {"help": help,
-                                    "volunteer": volunteer,
-                                    "distance": distance
-                                    })
-                
-                if distance <= radio_max:
-                    yield beam.pvalue.TaggedOutput("matched_users", data)
-                    logging.info(f"Match found: {data}")  
-                else:
-                    help_data = data[1].get('help')
-                    yield beam.pvalue.TaggedOutput("not_matched_users", help_data)
-                    volunteer_data = data[1].get('volunteer')                   
-                    yield beam.pvalue.TaggedOutput("not_matched_users", volunteer_data)
-                    # logging.info(f"HELP: {help_data}")  
-                    # logging.info(f"VOLUNTEER:{volunteer_data}")
+
+                for volunteer in volunteer_data:
+                    lat_volunteer, lon_volunteer = map(float, volunteer['ubicacion'].split(','))
+                    radio_max = volunteer.get('radio_disponible_km')
+
+                    distance = self.haversine(lat_volunteer, lon_volunteer, lat_request, lon_request)
+
+                    data = (category, {"help": help, 
+                                    "volunteer": volunteer, 
+                                    "distance": distance})
+
+                    if distance <= radio_max:
+                        yield beam.pvalue.TaggedOutput("matched_users", data)
+                        logging.info(f"Match found: {data}")
+                    else:
+                        yield beam.pvalue.TaggedOutput("not_matched_users", help)
+                        yield beam.pvalue.TaggedOutput("not_matched_users", volunteer) 
+
         else:
             if len(element[1][0]) > 0:
-                help_data = element[1][0][0]
-                yield beam.pvalue.TaggedOutput("not_matched_users", help_data)
-                logging.info(f"HELP - SECOND LEVEL: {help_data}")  
+                for help_item in help_data:
+                    yield beam.pvalue.TaggedOutput("not_matched_users", help_item) 
+                    # logging.info(f"HELP - SECOND LEVEL: {help_item}")
             elif len(element[1][1]) > 0:
-                volunteer_data = element[1][1][0]
-                yield beam.pvalue.TaggedOutput("not_matched_users", volunteer_data)
-                logging.info(f"VOLUNTEER - SECOND LEVEL: {volunteer_data}")
+                for volunteer_item in volunteer_data:
+                    yield beam.pvalue.TaggedOutput("not_matched_users", volunteer_item)
+                    # logging.info(f"VOLUNTEER - SECOND LEVEL: {volunteer_item}")
 
 
 class PrepareForPubSub(beam.DoFn):
@@ -123,7 +119,7 @@ class StoreBigQueryNotMatched(beam.DoFn):
             "nivel_urgencia": element["nivel_urgencia"],
             "telefono": element["telefono"],
             "attempts": element["attempts"],
-            "insertion_timestamp": datetime.now().isoformat()
+            "insertion_stamp": datetime.now().isoformat()
         }
     def FormatBigQueryVolunteer(self, element):
         return {
@@ -135,14 +131,16 @@ class StoreBigQueryNotMatched(beam.DoFn):
             "radio_disponible_km": element["radio_disponible_km"],
             "created_at": element["created_at"],
             "attempts": element["attempts"],
-            "insertion_timestamp": datetime.now().isoformat()
+            "insertion_stamp": datetime.now().isoformat()
         }
 
     def process(self, element):
         if "nivel_urgencia" in element:
             yield beam.pvalue.TaggedOutput("unmatched_requests", self.FormatBigQueryHelp(element))
+            logging.info(f"Sent to BQ - help: {element}")
         if "radio_disponible_km" in element:
             yield beam.pvalue.TaggedOutput("unmatched_volunteers", self.FormatBigQueryVolunteer(element))
+            logging.info(f"Sent to BQ - volunteer: {element}")
 
 
 
@@ -180,10 +178,10 @@ def run():
                 required=True,
                 help='The BigQuery dataset where matched users will be stored.')
     
-    parser.add_argument(
-                '--output_topic',
-                required=False,
-                help='PubSub Topic for matched users.')
+    # parser.add_argument(
+    #             '--output_topic',
+    #             required=False,
+    #             help='PubSub Topic for matched users.')
     
     args, pipeline_opts = parser.parse_known_args()
 
@@ -248,10 +246,15 @@ def run():
         )
         
         # Messages with attempts, check if attempts > = 5. Separate in 2 partitions
-        max_attempts_data, valid_data = (
+        partitions = (
         with_attempts
-        | "Partitions Max / Valid" >> beam.Partition(lambda element, _: 0 if element["attempts"] >= 5 else 1, 2 ))
+        | "Partition data" >> beam.Partition(lambda element, _: 0 if element.get("attempts", 0) < 5 else 1, 2)
+    )
+        valid_data = partitions[0]
+        max_attempts_data = partitions[1]
+    
 
+        # max_attempts_data | "Print" >> beam.Map(lambda x: print(f"MAXED OUT {x}"))
 
         # Partition 1 has reached max attempts and we send them to BigQuery
         send_BQ = (
