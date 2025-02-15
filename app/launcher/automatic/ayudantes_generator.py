@@ -48,7 +48,7 @@ def reverse_geocode(lat, lon):
         print("Error en reverse geocoding:", e)
     return None
 
-categorias = ["Alimentos", "Medicamentos", "Limpieza", "Maquinaria, Transporte", "Asistencia Social"]
+categorias = ["Alimentos", "Medicamentos", "Limpieza", "Maquinaria", "Transporte", "Asistencia Social"]
 radio_disponibilidad = [5, 10, 15, 50]
 
 def get_random_ayudante():
