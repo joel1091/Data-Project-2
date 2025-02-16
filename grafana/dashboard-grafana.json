@@ -1,0 +1,682 @@
+{
+  "__inputs": [
+    {
+      "name": "DS_GRAFANA-BIGQUERY-DATASOURCE",
+      "label": "grafana-bigquery-datasource",
+      "description": "",
+      "type": "datasource",
+      "pluginId": "grafana-bigquery-datasource",
+      "pluginName": "Google BigQuery"
+    }
+  ],
+  "__elements": {},
+  "__requires": [
+    {
+      "type": "panel",
+      "id": "bargauge",
+      "name": "Bar gauge",
+      "version": ""
+    },
+    {
+      "type": "panel",
+      "id": "gauge",
+      "name": "Gauge",
+      "version": ""
+    },
+    {
+      "type": "grafana",
+      "id": "grafana",
+      "name": "Grafana",
+      "version": "11.5.1"
+    },
+    {
+      "type": "datasource",
+      "id": "grafana-bigquery-datasource",
+      "name": "Google BigQuery",
+      "version": "2.0.2"
+    },
+    {
+      "type": "panel",
+      "id": "piechart",
+      "name": "Pie chart",
+      "version": ""
+    },
+    {
+      "type": "panel",
+      "id": "stat",
+      "name": "Stat",
+      "version": ""
+    }
+  ],
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": {
+          "type": "grafana",
+          "uid": "-- Grafana --"
+        },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "datasource": {
+        "type": "grafana-bigquery-datasource",
+        "uid": "${DS_GRAFANA-BIGQUERY-DATASOURCE}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "id": 5,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "percentChangeColorMode": "standard",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "pluginVersion": "11.5.1",
+      "targets": [
+        {
+          "editorMode": "code",
+          "format": 1,
+          "location": "",
+          "project": "total-glider-447114-u4",
+          "rawQuery": true,
+          "rawSql": "WITH total_unmatched_requests AS (\r\n  SELECT COUNT(*) AS total\r\n  FROM `total-glider-447114-u4.users.unmatched_requests`\r\n),\r\ntotal_unmatched_volunteers AS (\r\n  SELECT COUNT(*) AS total\r\n  FROM `total-glider-447114-u4.users.unmatched_volunteers`\r\n),\r\ntotal_matched_pairs AS (\r\n  SELECT COUNT(*) * 2 AS total\r\n  FROM `total-glider-447114-u4.users.matched_pairs`\r\n)\r\n\r\nSELECT \r\n  (total_unmatched_requests.total + total_unmatched_volunteers.total + total_matched_pairs.total) AS total_messages\r\nFROM total_unmatched_requests, total_unmatched_volunteers, total_matched_pairs;\r\n",
+          "refId": "A",
+          "sql": {
+            "columns": [
+              {
+                "parameters": [],
+                "type": "function"
+              }
+            ],
+            "groupBy": [
+              {
+                "property": {
+                  "type": "string"
+                },
+                "type": "groupBy"
+              }
+            ],
+            "limit": 50
+          },
+          "datasource": {
+            "type": "grafana-bigquery-datasource",
+            "uid": "${DS_GRAFANA-BIGQUERY-DATASOURCE}"
+          }
+        }
+      ],
+      "title": "Total messages received",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "grafana-bigquery-datasource",
+        "uid": "${DS_GRAFANA-BIGQUERY-DATASOURCE}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            }
+          },
+          "mappings": []
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 9,
+        "x": 6,
+        "y": 0
+      },
+      "id": 7,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "right",
+          "showLegend": true
+        },
+        "pieType": "pie",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": true
+        },
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "pluginVersion": "11.5.1",
+      "targets": [
+        {
+          "editorMode": "code",
+          "format": 1,
+          "location": "",
+          "project": "total-glider-447114-u4",
+          "rawQuery": true,
+          "rawSql": "WITH total_matched_pairs AS (\r\n  SELECT \r\n    COUNT(*) AS total,\r\n    help_poblacion\r\n  FROM `total-glider-447114-u4.users.matched_pairs`\r\n  GROUP BY help_poblacion\r\n)\r\n\r\nSELECT \r\n  help_poblacion,\r\n  total\r\nFROM total_matched_pairs\r\nORDER BY total DESC;",
+          "refId": "A",
+          "sql": {
+            "columns": [
+              {
+                "parameters": [],
+                "type": "function"
+              }
+            ],
+            "groupBy": [
+              {
+                "property": {
+                  "type": "string"
+                },
+                "type": "groupBy"
+              }
+            ],
+            "limit": 50
+          },
+          "datasource": {
+            "type": "grafana-bigquery-datasource",
+            "uid": "${DS_GRAFANA-BIGQUERY-DATASOURCE}"
+          }
+        }
+      ],
+      "title": "Nº of matches by Location",
+      "type": "piechart"
+    },
+    {
+      "datasource": {
+        "type": "grafana-bigquery-datasource",
+        "uid": "${DS_GRAFANA-BIGQUERY-DATASOURCE}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            }
+          },
+          "mappings": []
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 9,
+        "x": 15,
+        "y": 0
+      },
+      "id": 8,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "right",
+          "showLegend": true
+        },
+        "pieType": "pie",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": true
+        },
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "pluginVersion": "11.5.1",
+      "targets": [
+        {
+          "editorMode": "code",
+          "format": 1,
+          "location": "",
+          "project": "total-glider-447114-u4",
+          "rawQuery": true,
+          "rawSql": "WITH total_matched_pairs AS (\r\n  SELECT \r\n    COUNT(*) AS total,\r\n    categoria\r\n  FROM `total-glider-447114-u4.users.matched_pairs`\r\n  GROUP BY categoria\r\n)\r\n\r\nSELECT \r\n  categoria,\r\n  total\r\nFROM total_matched_pairs\r\nORDER BY total DESC;",
+          "refId": "A",
+          "sql": {
+            "columns": [
+              {
+                "parameters": [],
+                "type": "function"
+              }
+            ],
+            "groupBy": [
+              {
+                "property": {
+                  "type": "string"
+                },
+                "type": "groupBy"
+              }
+            ],
+            "limit": 50
+          },
+          "datasource": {
+            "type": "grafana-bigquery-datasource",
+            "uid": "${DS_GRAFANA-BIGQUERY-DATASOURCE}"
+          }
+        }
+      ],
+      "title": "Nº of matches by Category",
+      "type": "piechart"
+    },
+    {
+      "datasource": {
+        "type": "grafana-bigquery-datasource",
+        "uid": "${DS_GRAFANA-BIGQUERY-DATASOURCE}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 0,
+        "y": 3
+      },
+      "id": 6,
+      "options": {
+        "minVizHeight": 75,
+        "minVizWidth": 75,
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showThresholdLabels": false,
+        "showThresholdMarkers": true,
+        "sizing": "auto"
+      },
+      "pluginVersion": "11.5.1",
+      "targets": [
+        {
+          "editorMode": "code",
+          "format": 1,
+          "location": "",
+          "project": "total-glider-447114-u4",
+          "rawQuery": true,
+          "rawSql": "WITH total_unmatched_requests AS (\r\n  SELECT COUNT(*) AS total\r\n  FROM `total-glider-447114-u4.users.unmatched_requests`\r\n),\r\ntotal_unmatched_volunteers AS (\r\n  SELECT COUNT(*) AS total\r\n  FROM `total-glider-447114-u4.users.unmatched_volunteers`\r\n),\r\ntotal_matched_pairs AS (\r\n  SELECT COUNT(*) AS total\r\n  FROM `total-glider-447114-u4.users.matched_pairs`\r\n)\r\n\r\nSELECT \r\n  total_matched_pairs.total AS total_matches,\r\n  (total_unmatched_requests.total + total_unmatched_volunteers.total) AS total_not_matched\r\nFROM total_unmatched_requests, total_unmatched_volunteers, total_matched_pairs;\r\n",
+          "refId": "A",
+          "sql": {
+            "columns": [
+              {
+                "parameters": [],
+                "type": "function"
+              }
+            ],
+            "groupBy": [
+              {
+                "property": {
+                  "type": "string"
+                },
+                "type": "groupBy"
+              }
+            ],
+            "limit": 50
+          },
+          "datasource": {
+            "type": "grafana-bigquery-datasource",
+            "uid": "${DS_GRAFANA-BIGQUERY-DATASOURCE}"
+          }
+        }
+      ],
+      "title": "Number of matches and not matches",
+      "type": "gauge"
+    },
+    {
+      "datasource": {
+        "type": "grafana-bigquery-datasource",
+        "uid": "${DS_GRAFANA-BIGQUERY-DATASOURCE}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "#EAB839",
+                "value": 3
+              },
+              {
+                "color": "red",
+                "value": 3.5
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 6,
+        "x": 0,
+        "y": 8
+      },
+      "id": 4,
+      "options": {
+        "displayMode": "basic",
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": false
+        },
+        "maxVizHeight": 300,
+        "minVizHeight": 16,
+        "minVizWidth": 8,
+        "namePlacement": "top",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": true
+        },
+        "showUnfilled": true,
+        "sizing": "auto",
+        "valueMode": "color"
+      },
+      "pluginVersion": "11.5.1",
+      "targets": [
+        {
+          "editorMode": "code",
+          "format": 1,
+          "location": "",
+          "project": "total-glider-447114-u4",
+          "rawQuery": true,
+          "rawSql": "WITH total_unmatched_requests AS (\r\n  SELECT COUNT(*) AS total, categoria, nivel_urgencia AS urgencia\r\n  FROM `total-glider-447114-u4.users.unmatched_requests`\r\n  GROUP BY categoria, nivel_urgencia\r\n),\r\ntotal_matched_pairs AS (\r\n  SELECT COUNT(*) AS total, categoria, urgencia\r\n  FROM `total-glider-447114-u4.users.matched_pairs`\r\n  GROUP BY categoria, urgencia\r\n)\r\n\r\nSELECT \r\n  categoria,\r\n  AVG(urgencia) AS urgencia_promedio\r\nFROM (\r\n  SELECT categoria, urgencia FROM total_unmatched_requests\r\n  UNION ALL\r\n  SELECT categoria, urgencia FROM total_matched_pairs\r\n)\r\nGROUP BY categoria\r\nORDER BY urgencia_promedio DESC;\r\n",
+          "refId": "A",
+          "sql": {
+            "columns": [
+              {
+                "parameters": [],
+                "type": "function"
+              }
+            ],
+            "groupBy": [
+              {
+                "property": {
+                  "type": "string"
+                },
+                "type": "groupBy"
+              }
+            ],
+            "limit": 50
+          },
+          "datasource": {
+            "type": "grafana-bigquery-datasource",
+            "uid": "${DS_GRAFANA-BIGQUERY-DATASOURCE}"
+          }
+        }
+      ],
+      "title": "Avg emergency level of help requests",
+      "type": "bargauge"
+    },
+    {
+      "datasource": {
+        "type": "grafana-bigquery-datasource",
+        "uid": "${DS_GRAFANA-BIGQUERY-DATASOURCE}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            }
+          },
+          "mappings": []
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 9,
+        "x": 6,
+        "y": 9
+      },
+      "id": 2,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "right",
+          "showLegend": true
+        },
+        "pieType": "pie",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": true
+        },
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "pluginVersion": "11.5.1",
+      "targets": [
+        {
+          "editorMode": "code",
+          "format": 1,
+          "location": "",
+          "project": "total-glider-447114-u4",
+          "rawQuery": true,
+          "rawSql": "SELECT COUNT(*) as total, poblacion FROM `total-glider-447114-u4.users.unmatched_requests` GROUP BY poblacion ORDER BY total DESC",
+          "refId": "A",
+          "sql": {
+            "columns": [
+              {
+                "parameters": [],
+                "type": "function"
+              }
+            ],
+            "groupBy": [
+              {
+                "property": {
+                  "type": "string"
+                },
+                "type": "groupBy"
+              }
+            ],
+            "limit": 50
+          },
+          "datasource": {
+            "type": "grafana-bigquery-datasource",
+            "uid": "${DS_GRAFANA-BIGQUERY-DATASOURCE}"
+          }
+        }
+      ],
+      "title": "Nº of not matched requests by Location",
+      "type": "piechart"
+    },
+    {
+      "datasource": {
+        "type": "grafana-bigquery-datasource",
+        "uid": "${DS_GRAFANA-BIGQUERY-DATASOURCE}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            }
+          },
+          "mappings": []
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 9,
+        "x": 15,
+        "y": 9
+      },
+      "id": 3,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "right",
+          "showLegend": true
+        },
+        "pieType": "pie",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": true
+        },
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "pluginVersion": "11.5.1",
+      "targets": [
+        {
+          "editorMode": "code",
+          "format": 1,
+          "location": "",
+          "project": "total-glider-447114-u4",
+          "rawQuery": true,
+          "rawSql": "SELECT COUNT(*) as total, categoria FROM `total-glider-447114-u4.users.unmatched_requests` GROUP BY categoria ORDER BY total DESC",
+          "refId": "A",
+          "sql": {
+            "columns": [
+              {
+                "parameters": [],
+                "type": "function"
+              }
+            ],
+            "groupBy": [
+              {
+                "property": {
+                  "type": "string"
+                },
+                "type": "groupBy"
+              }
+            ],
+            "limit": 50
+          },
+          "datasource": {
+            "type": "grafana-bigquery-datasource",
+            "uid": "${DS_GRAFANA-BIGQUERY-DATASOURCE}"
+          }
+        }
+      ],
+      "title": "Nº of not matched requests by Category",
+      "type": "piechart"
+    }
+  ],
+  "refresh": "",
+  "schemaVersion": 40,
+  "tags": [],
+  "templating": {
+    "list": []
+  },
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "New dashboard",
+  "uid": "eed8avru68vlse",
+  "version": 2,
+  "weekStart": ""
+}
