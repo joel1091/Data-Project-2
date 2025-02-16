@@ -49,7 +49,7 @@ def reverse_geocode(lat, lon):
     return None
 
 categorias = ["Alimentos", "Medicamentos", "Limpieza", "Maquinaria", "Transporte", "Asistencia Social"]
-radio_disponibilidad = [5, 10, 15, 50]
+radio_disponibilidad = [5, 10, 15, 20, 25, 50]
 
 def get_random_ayudante():
     """
