@@ -77,42 +77,62 @@ class FilterbyDistance(beam.DoFn):
         # Inicializamos los sets para trackear los IDs
         matched_helps = set()
         matched_volunteers = set()
-
+        
         if len(help_data) and len(volunteer_data) > 0:
+            # Convertimos help_data y volunteer_data a listas para poder modificarlos
+            available_volunteers = list(volunteer_data)
+            
             for help in help_data:
-                found_match = False  # Flag para controlar si encontramos match
+                if not available_volunteers:  # Si no quedan voluntarios disponibles
+                    if help['id'] not in matched_helps:
+                        yield beam.pvalue.TaggedOutput("not_matched_users", help)
+                        logging.info(f"No more volunteers available for Help ID: {help['id']}")
+                    continue
+                    
+                found_match = False
                 lat_request, lon_request = map(float, help['ubicacion'].split(','))
-
-                for volunteer in volunteer_data:
+                
+                # Encontrar el voluntario más cercano que esté dentro del radio
+                closest_volunteer = None
+                min_distance = float('inf')
+                volunteer_index = -1
+                
+                for i, volunteer in enumerate(available_volunteers):
                     lat_volunteer, lon_volunteer = map(float, volunteer['ubicacion'].split(','))
                     radio_max = volunteer.get('radio_disponible_km')
-
+                    
                     distance = self.haversine(lat_volunteer, lon_volunteer, lat_request, lon_request)
-
-                    if distance <= radio_max:
-                        data = (category, {
-                            "help": help,
-                            "volunteer": volunteer,
-                            "distance": distance
-                        })
-                        yield beam.pvalue.TaggedOutput("matched_users", data)
-                        matched_helps.add(help['id'])
-                        matched_volunteers.add(volunteer['id'])
-                        found_match = True
-                        logging.info(f"Match found - Help ID: {help['id']}, Volunteer ID: {volunteer['id']}")
-                        break  # Salimos del loop interno una vez encontrado el match
+                    
+                    if distance <= radio_max and distance < min_distance:
+                        min_distance = distance
+                        closest_volunteer = volunteer
+                        volunteer_index = i
                 
-                # Si no se encontró match y el help no está en matched_helps
-                if not found_match:
+                if closest_volunteer:
+                    data = (category, {
+                        "help": help,
+                        "volunteer": closest_volunteer,
+                        "distance": min_distance
+                    })
+                    yield beam.pvalue.TaggedOutput("matched_users", data)
+                    matched_helps.add(help['id'])
+                    matched_volunteers.add(closest_volunteer['id'])
+                    found_match = True
+                    logging.info(f"Match found - Help ID: {help['id']}, Volunteer ID: {closest_volunteer['id']}, Distance: {min_distance}")
+                    
+                    # Eliminar el voluntario usado de la lista de disponibles
+                    available_volunteers.pop(volunteer_index)
+                
+                if not found_match and help['id'] not in matched_helps:
                     yield beam.pvalue.TaggedOutput("not_matched_users", help)
                     logging.info(f"No match found for Help ID: {help['id']}")
-
-            # Procesar volunteers no emparejados
-            for volunteer in volunteer_data:
+            
+            # Emitir los voluntarios que no hicieron match
+            for volunteer in available_volunteers:
                 if volunteer['id'] not in matched_volunteers:
                     yield beam.pvalue.TaggedOutput("not_matched_users", volunteer)
                     logging.info(f"No match found for Volunteer ID: {volunteer['id']}")
-
+        
         else:
             # Caso donde uno de los grupos está vacío
             if len(help_data) > 0:
