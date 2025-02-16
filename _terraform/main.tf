@@ -173,4 +173,24 @@ module "grafana_iam_invoker" {
 }
 
 
+#ESTO ES LO NUEVO QUE HE PUESTO
+
+module "discord_notifier" {
+  source = "./modules/cloud_run_discord"
+  
+  project_id            = var.project_id
+  region               = var.region
+  service_name         = "discord-notifier"
+  image_name           = "gcr.io/${var.project_id}/discord-notifier:latest"
+  service_account_email = module.service_accounts.pubsub_sa_email # o el email de tu SA
+  
+  environment_variables = {
+    DISCORD_WEBHOOK_URL = var.discord_webhook_url
+    # Otras variables de entorno necesarias
+  }
+  
+  create_trigger = true
+  repo_name      = "your-repo-name"
+  trigger_branch = "main"
+}
 
