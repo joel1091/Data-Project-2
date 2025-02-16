@@ -45,6 +45,11 @@ def FormatBigQueryMatched(element):
         "volunteer_created_at": volunteer_data["created_at"]
     }
 
+
+def FormatPubSubMessage(element):
+    return json.dumps(element).encode('utf-8')
+
+
 # Add attempts to unmatched messages
 def AddAttempts(element):
     if "attempts" not in element:
@@ -227,6 +232,12 @@ def run():
                 help='PubSub subscription used for reading volunteers data.')
     
     parser.add_argument(
+                '--matched_events',
+                required=True,
+                help='PubSub topic used for writing matched'
+    )
+
+    parser.add_argument(
                 '--bigquery_dataset',
                 required=True,
                 help='The BigQuery dataset where matched users will be stored.')
@@ -305,6 +316,11 @@ def run():
         create_disposition=beam.io.BigQueryDisposition.CREATE_IF_NEEDED
     )
         
+        (formated_matched_data
+            | "Format for PubSub" >> beam.Map(FormatPubSubMessage)
+            | "Write to PubSub" >> WriteToPubSub(topic=args.matched_events, with_attributes=False)
+            )
+
         # For tag not_matched_users, add field "attempts"
         with_attempts = (
             grouped_data.not_matched_users| "Add attempt" >> beam.Map(AddAttempts)
