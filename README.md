@@ -156,13 +156,38 @@ http://localhost:8501
 ## 📊 **Monitorización**
 
 El proyecto incluye un dashboard en Grafana que muestra:
-- Número total de solicitudes de ayuda
-- Número total de ofertas de voluntarios
-- Matches realizados
-- Distribución geográfica
-- Categorías más solicitadas/ofrecidas
-- Tiempos promedio de respuesta
-- Métricas de eficiencia del matching
+- Número total de mensajes recibidos.
+- Número total de matches realizados.
+- Categorías más solicitadas/ofrecidas.
+- Número de matches por localización y por categoría.
+- úmero de peticiones sin coincidencia por localización y categoría.
+
+### Para acceder a Grafana, sigue los siguientes pasos:
+1. Ejecuta este comando y accede al link proporcionado
+```bash
+gcloud <>
+```
+2. Inicia sesión: 
+               <br>
+               User: `admin` 
+               <br>
+               Password: `dataproject2`
+
+3. Añade el conector en `Connections` > `Add new connection`
+
+4. Selecciona `Google BigQuery` y haz click en `Install`
+   
+5. Haz click en `Add new data source` 
+   
+6. Selecciona abajo `GCE Default Service Account` y escriba el nombre del proyecto `dataproject2425`
+   
+7. Dirígete a `Dashboards` 
+   
+8. Haz click en `New` y en `Import` 
+   
+9.  Importa el archivo json: [dashboard-grafana.json](Data-Project-2/blob/main/grafana/dashboard-grafana.json)
+    
+10. Selecciona `Google BigQuery data source`
 
 ## 🔧 **Tecnologías Utilizadas**
 
