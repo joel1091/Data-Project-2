@@ -85,6 +85,14 @@ module "sa_cloud_run_service" {
   ]
 }
 
+module "cloud_run_iam_invoker" {
+  source     = "./modules/cloud_run_iam"
+  project_id = var.project_id
+  location   = module.cloud_run_service.location
+  service    = module.cloud_run_service.name  
+  role       = "roles/run.invoker"
+  member     = "allUsers"
+}
 
 module "cloudbuildservice_submit" {
   source                     = "./modules/cloudbuildservice_submit"
