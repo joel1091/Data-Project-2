@@ -173,4 +173,41 @@ module "grafana_iam_invoker" {
 }
 
 
+module "dataflow_trigger" {
+  source = "./modules/cloud_trigger"
+
+  trigger_name                    = var.trigger_name
+  trigger_description             = var.trigger_description
+  github_owner                    = var.github_owner
+  github_repo_name                = var.github_repo_name
+  github_branch                   = var.github_branch
+  build_filename                  = var.build_filename
+  dataflow_base_bucket            = var.dataflow_base_bucket
+  dataflow_job_name               = var.dataflow_job_name
+  dataflow_template_name          = var.dataflow_template_name
+  region_id                       = var.region_id
+  project_id                      = var.project_id
+  artifact_registry_repository    = var.artifact_registry_repository
+  artifact_registry_image_name    = var.artifact_registry_image_name
+  dataflow_python_file_path       = var.dataflow_python_file_path
+  dataflow_requirements_file_path = var.dataflow_requirements_file_path
+  bigquery_dataset_name           = var.bigquery_dataset_name
+
+  volunteer_topic_name           = var.volunteer_topic_name
+  volunteer_pubsub_subscription_name = var.volunteer_pubsub_subscription_name
+  help_topic_name                 = var.help_topic_name
+  help_pubsub_subscription_name   = var.help_pubsub_subscription_name
+}
+
+
+
+resource "google_storage_bucket" "dataflow_bucket" {
+  name          = var.dataflow_base_bucket
+  location      = var.region_id
+  force_destroy = false
+
+  versioning {
+    enabled = true
+  }
+}
 
