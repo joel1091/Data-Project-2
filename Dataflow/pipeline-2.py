@@ -22,12 +22,27 @@ def ParsePubSubMessage(message):
 # Indicate schema/value
 def FormatBigQueryMatched(element):
     categoria, data = element
+    help_data = data["help"]
+    volunteer_data = data["volunteer"]
+
     return {
         "match_id": str(uuid.uuid4()), 
         "categoria": categoria,
-        "help": json.dumps(data["help"]),
-        "volunteer": json.dumps(data["volunteer"]),
-        "distance": data["distance"]
+        "distance": data["distance"],
+        #Help fields
+        "urgencia": help_data["nivel_urgencia"],
+        "help_nombre": help_data["nombre"],
+        "help_ubicacion": help_data["ubicacion"],
+        "help_poblacion": help_data["poblacion"],
+        "help_descripcion": help_data["descripcion"],
+        "help_telefono": help_data["telefono"],
+        "help_created_at": help_data["created_at"],
+        #Volunteer fields
+        "volunteer_nombre": volunteer_data["nombre"],
+        "volunteer_ubicacion": volunteer_data["ubicacion"],
+        "volunteer_poblacion": volunteer_data["poblacion"],
+        "volunteer_radio_disponible_km": volunteer_data["radio_disponible_km"],  
+        "volunteer_created_at": volunteer_data["created_at"]
     }
 
 # Add attempts to unmatched messages
@@ -250,12 +265,24 @@ def run():
         formated_matched_data | "Write matches to BigQuery" >> beam.io.WriteToBigQuery(
         table=f"{args.project_id}:{args.bigquery_dataset}.matched_pairs",
         schema = {
-        "fields": [
-            {"name": "match_id", "type": "STRING", "mode": "NULLABLE"},
-            {"name": "categoria", "type": "STRING", "mode": "NULLABLE"},
-            {"name": "help", "type": "STRING", "mode": "NULLABLE"},
-            {"name": "volunteer", "type": "STRING", "mode": "NULLABLE"},
-            {"name": "distance", "type": "FLOAT", "mode": "NULLABLE"}
+            "fields": [
+                {"name": "match_id", "type": "STRING", "mode": "NULLABLE"},
+                {"name": "categoria", "type": "STRING", "mode": "NULLABLE"},
+                {"name": "distance", "type": "FLOAT", "mode": "NULLABLE"},
+                # Help fields
+                {"name": "urgencia", "type": "INTEGER", "mode": "NULLABLE"},
+                {"name": "help_nombre", "type": "STRING", "mode": "NULLABLE"},
+                {"name": "help_ubicacion", "type": "STRING", "mode": "NULLABLE"},
+                {"name": "help_poblacion", "type": "STRING", "mode": "NULLABLE"},
+                {"name": "help_descripcion", "type": "STRING", "mode": "NULLABLE"},
+                {"name": "help_telefono", "type": "STRING", "mode": "NULLABLE"},
+                {"name": "help_created_at", "type": "TIMESTAMP", "mode": "NULLABLE"},
+                # Volunteer fields
+                {"name": "volunteer_nombre", "type": "STRING", "mode": "NULLABLE"},
+                {"name": "volunteer_ubicacion", "type": "STRING", "mode": "NULLABLE"},
+                {"name": "volunteer_poblacion", "type": "STRING", "mode": "NULLABLE"},
+                {"name": "volunteer_radio_disponible_km", "type": "INTEGER", "mode": "NULLABLE"},
+                {"name": "volunteer_created_at", "type": "TIMESTAMP", "mode": "NULLABLE"}
         ]},
         write_disposition=beam.io.BigQueryDisposition.WRITE_APPEND,
         create_disposition=beam.io.BigQueryDisposition.CREATE_IF_NEEDED
