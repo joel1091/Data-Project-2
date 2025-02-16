@@ -20,14 +20,18 @@ resource "null_resource" "build_and_push_streamlit" {
 
 # Recurso para invocar el servicio de Cloud Run después de subir la imagen
 resource "null_resource" "invoke_cloud_run_service" {
-  depends_on = [null_resource.build_and_push_streamlit]  # Esto asegura que el servicio no se invoque hasta que la imagen esté subida
+  depends_on = [null_resource.build_and_push_streamlit]  # Asegura que la imagen se haya subido
 
   provisioner "local-exec" {
+    interpreter = ["cmd", "/C"]
     command = <<-EOT
-      SERVICE_URL=$(gcloud run services describe ${var.service_name} --region ${var.region} --project ${var.project_id} --format "value(status.url)")
-      
-      # Realizar una invocación HTTP al servicio de Cloud Run usando curl
-      curl -X GET $SERVICE_URL
+      for /f "tokens=*" %i in ('gcloud run services describe ${var.service_name} --region ${var.region} --project ${var.project_id} --format "value(status.url)"') do (
+        set URL=%i
+      )
+      echo Invoking service at: %URL%
+      curl -X GET %URL%
     EOT
   }
 }
+
+
