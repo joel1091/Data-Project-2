@@ -152,3 +152,25 @@ module "bigquery_matched" {
   schema_file = "/schemas//matched.json"
 }
 
+module "grafana" {
+  source             = "./modules/cloud_run_grafana"
+  image_name_grafana = var.grafana_service_name
+  region             = var.region
+
+  roles = [
+    "roles/bigquery.dataviewer",
+    "roles/bigquery.jobUser"
+  ]
+}
+
+module "grafana_iam_invoker" {
+  source     = "./modules/cloud_run_iam"
+  project_id = var.project_id
+  location   = module.grafana.region
+  service    = module.grafana.name
+  role       = "roles/run.invoker"
+  member     = "allUsers"
+}
+
+
+

@@ -26,7 +26,7 @@
     },
     {
       "name": "radio_disponible_km",
-      "type": "FLOAT",
+      "type": "INT64",
       "mode": "NULLABLE"
     },
     {
@@ -35,9 +35,13 @@
       "mode": "NULLABLE"
     },
     {
-      "name": "insertion_timestamp",
+      "name": "attempts",
+      "type": "INT64",
+      "mode": "NULLABLE"
+    },
+    {
+      "name": "insertion_stamp",
       "type": "TIMESTAMP",
       "mode": "NULLABLE"
     }
   ]
-  

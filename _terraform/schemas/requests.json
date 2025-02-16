@@ -36,7 +36,7 @@
     },
     {
       "name": "nivel_urgencia",
-      "type": "INTEGER",
+      "type": "INT64",
       "mode": "NULLABLE"
     },
     {
@@ -45,9 +45,13 @@
       "mode": "NULLABLE"
     },
     {
-      "name": "insertion_timestamp",
+      "name": "insertion_stamp",
       "type": "TIMESTAMP",
+      "mode": "NULLABLE"
+    },
+    {
+      "name": "attempts",
+      "type": "INT64",
       "mode": "NULLABLE"
     }
   ]
-  

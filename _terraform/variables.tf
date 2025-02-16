@@ -54,4 +54,7 @@ variable "service_name" {
   type = string
 }
 
-
+variable "grafana_service_name"{
+  description = "Nombre de Grafana Service"
+  type = string
+}
