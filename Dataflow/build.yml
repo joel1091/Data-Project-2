@@ -1,0 +1,41 @@
+steps:
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: gcloud
+    id: Build Dataflow Flex Template
+    args: ['dataflow', 'flex-template', 'build',
+           'gs://$_DATAFLOW_BASE_BUCKET/$_DATAFLOW_TEMPLATE_NAME.json',
+           '--image-gcr-path=$_REGION_ID-docker.pkg.dev/$PROJECT_ID/$_ARTIFACT_REGISTRY_REPOSITORY/$_ARTIFACT_REGISTRY_IMAGE_NAME:$COMMIT_SHA',
+           '--flex-template-base-image=PYTHON3',
+           '--sdk-language=PYTHON',
+           '--py-path=.',
+           '--env=FLEX_TEMPLATE_PYTHON_PY_FILE=$_DATAFLOW_PYTHON_FILE_PATH',
+           '--env=FLEX_TEMPLATE_PYTHON_REQUIREMENTS_FILE=$_DATAFLOW_REQUIREMENTS_FILE_PATH'
+    ]
+    waitFor: ['-']
+
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: gcloud
+    id: Run Dataflow Flex Template
+    args: ['dataflow', 'flex-template', 'run', '$_DATAFLOW_JOB_NAME',
+           '--template-file-gcs-location=gs://$_DATAFLOW_BASE_BUCKET/$_DATAFLOW_TEMPLATE_NAME.json',
+           '--parameters=project_id=$PROJECT_ID,help_subscription=$_HELP_PUBSUB_SUBSCRIPTION_NAME,volunteer_subscription=$_VOLUNTEER_PUBSUB_SUBSCRIPTION_NAME,bigquery_dataset=$_BIGQUERY_DATASET_NAME_',
+           '--region=$_REGION_ID',
+           '--max-workers=1'
+    ]
+    waitFor: ['Build Dataflow Flex Template']
+
+options:
+  logging: STACKDRIVER_ONLY
+
+substitutions:
+  _DATAFLOW_BASE_BUCKET: <NAME-BUCKET>
+  _DATAFLOW_JOB_NAME: dataflow-dp2
+  _DATAFLOW_TEMPLATE_NAME: dataflow-dp2-template
+  _REGION_ID: europe-west1
+  _ARTIFACT_REGISTRY_REPOSITORY: data-project2
+  _ARTIFACT_REGISTRY_IMAGE_NAME: data-project2-image
+  _DATAFLOW_PYTHON_FILE_PATH: dataflow.py
+  _DATAFLOW_REQUIREMENTS_FILE_PATH: requirements.txt
+  _HELP_PUBSUB_SUBSCRIPTION_NAME: projects/$PROJECT_ID/subscriptions/ayudantes-events-sub
+  _VOLUNTEER_PUBSUB_SUBSCRIPTION_NAME: projects/$PROJECT_ID/subscriptions/necesitados-events-sub
+  _BIGQUERY_DATASET_NAME_: users
