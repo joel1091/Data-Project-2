@@ -3,3 +3,4 @@ google-cloud-pubsub
 streamlit_folium
 folium
 geopy
+python-dotenv

@@ -1,0 +1,77 @@
+[
+    {
+      "name": "match_id",
+      "type": "STRING",
+      "mode": "NULLABLE"
+    },
+    {
+      "name": "categoria",
+      "type": "STRING",
+      "mode": "NULLABLE"
+    },
+    {
+      "name": "distance",
+      "type": "FLOAT64",
+      "mode": "NULLABLE"
+    },
+    {
+      "name": "urgencia",
+      "type": "INT64",
+      "mode": "NULLABLE"
+    },
+    {
+      "name": "help_nombre",
+      "type": "STRING",
+      "mode": "NULLABLE"
+    },
+    {
+      "name": "help_ubicacion",
+      "type": "STRING",
+      "mode": "NULLABLE"
+    },
+    {
+      "name": "help_poblacion",
+      "type": "STRING",
+      "mode": "NULLABLE"
+    },
+    {
+      "name": "help_descripcion",
+      "type": "STRING",
+      "mode": "NULLABLE"
+    },
+    {
+      "name": "help_telefono",
+      "type": "STRING",
+      "mode": "NULLABLE"
+    },
+    {
+      "name": "help_created_at",
+      "type": "TIMESTAMP",
+      "mode": "NULLABLE"
+    },
+    {
+      "name": "volunteer_nombre",
+      "type": "STRING",
+      "mode": "NULLABLE"
+    },
+    {
+      "name": "volunteer_ubicacion",
+      "type": "STRING",
+      "mode": "NULLABLE"
+    },
+    {
+      "name": "volunteer_poblacion",
+      "type": "STRING",
+      "mode": "NULLABLE"
+    },
+    {
+      "name": "volunteer_radio_disponible_km",
+      "type": "INT64",
+      "mode": "NULLABLE"
+    },
+    {
+      "name": "volunteer_created_at",
+      "type": "TIMESTAMP",
+      "mode": "NULLABLE"
+    }
+  ]

@@ -74,5 +74,103 @@ module "cloud_run_automatic" {
   depends_on = [module.artifact_registry, module.cloudbuild_launcher_automatic]
 }
 
+module "sa_cloud_run_service" {
+  source       = "./modules/service_accounts"
+  account_id   = "cloud-run-service-sa"
+  display_name = "Service Account for Cloud Run Service"
+  project_id   = var.project_id
+  roles        = [
+    "roles/pubsub.subscriber",  
+    "roles/pubsub.publisher"    
+  ]
+}
+
+module "cloud_run_iam_invoker" {
+  source     = "./modules/cloud_run_iam"
+  project_id = var.project_id
+  location   = module.cloud_run_service.location
+  service    = module.cloud_run_service.name  
+  role       = "roles/run.invoker"
+  member     = "allUsers"
+}
+
+module "cloudbuildservice_submit" {
+  source                     = "./modules/cloudbuildservice_submit"
+  region                     = var.region
+  project_id                 = var.project_id
+  tag                        = var.tag
+  service_name               = var.service_name
+  artifact_registry_repository = module.artifact_registry.repository_id
+  build_context_dir_service          = var.build_context_dir_service
+
+  depends_on = [module.artifact_registry]
+}
+
+module "cloud_run_service" {
+  source                = "./modules/cloud_run_service"
+  service_name             = var.service_name
+  image_name_service      = "europe-west1-docker.pkg.dev/${var.project_id}/${var.repository_id}/${var.image_name_service}:${var.tag}"
+  region                = var.region
+  project_id            = var.project_id
+  service_account_email = module.sa_cloud_run_service.email
+
+  depends_on = [module.artifact_registry, module.cloudbuildservice_submit]
+}
+
+# Crear un único dataset (por ejemplo, "common-dataset")
+module "bigquery_dataset" {
+  source     = "./modules/bigquery_dataset"
+  project    = var.project_id
+  location   = var.region
+  dataset_id = "users"
+}
+
+# Crear la tabla "ayudantes"
+module "bigquery_ayudantes" {
+  source      = "./modules/bigquery_table"
+  project     = var.project_id
+  dataset_id  = module.bigquery_dataset.dataset_id
+  table_id    = "unmatched_volunteers"
+  schema_file = "/schemas/volunteer.json"
+}
+
+# Crear la tabla "necesitados"
+module "bigquery_necesitados" {
+  source      = "./modules/bigquery_table"
+  project     = var.project_id
+  dataset_id  = module.bigquery_dataset.dataset_id
+  table_id    = "unmatched_requests"
+  schema_file = "/schemas/requests.json"
+}
+
+# Crear la tabla "matched"
+module "bigquery_matched" {
+  source      = "./modules/bigquery_table"
+  project     = var.project_id
+  dataset_id  = module.bigquery_dataset.dataset_id
+  table_id    = "matched_pairs"
+  schema_file = "/schemas//matched.json"
+}
+
+module "grafana" {
+  source             = "./modules/cloud_run_grafana"
+  image_name_grafana = var.grafana_service_name
+  region             = var.region
+
+  roles = [
+    "roles/bigquery.dataviewer",
+    "roles/bigquery.jobUser"
+  ]
+}
+
+module "grafana_iam_invoker" {
+  source     = "./modules/cloud_run_iam"
+  project_id = var.project_id
+  location   = module.grafana.region
+  service    = module.grafana.name
+  role       = "roles/run.invoker"
+  member     = "allUsers"
+}
+
 
 

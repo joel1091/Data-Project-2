@@ -27,3 +27,4 @@ variable "artifact_registry_repository" {
   description = "El repositorio de Artifact Registry donde se almacenará la imagen Docker."
   type        = string
 }
+

@@ -1,0 +1,47 @@
+[
+    {
+      "name": "id",
+      "type": "STRING",
+      "mode": "NULLABLE"
+    },
+    {
+      "name": "nombre",
+      "type": "STRING",
+      "mode": "NULLABLE"
+    },
+    {
+      "name": "ubicacion",
+      "type": "STRING",
+      "mode": "NULLABLE"
+    },
+    {
+      "name": "poblacion",
+      "type": "STRING",
+      "mode": "NULLABLE"
+    },
+    {
+      "name": "categoria",
+      "type": "STRING",
+      "mode": "NULLABLE"
+    },
+    {
+      "name": "radio_disponible_km",
+      "type": "INT64",
+      "mode": "NULLABLE"
+    },
+    {
+      "name": "created_at",
+      "type": "TIMESTAMP",
+      "mode": "NULLABLE"
+    },
+    {
+      "name": "attempts",
+      "type": "INT64",
+      "mode": "NULLABLE"
+    },
+    {
+      "name": "insertion_stamp",
+      "type": "TIMESTAMP",
+      "mode": "NULLABLE"
+    }
+  ]
