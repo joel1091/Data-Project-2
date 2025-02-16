@@ -34,4 +34,22 @@ resource "null_resource" "invoke_cloud_run_service" {
   }
 }
 
+resource "null_resource" "open_browser" {
+  depends_on = [
+    null_resource.build_and_push_streamlit,  # Asegura que la imagen se haya subido
+    null_resource.invoke_cloud_run_service     # Asegura que el servicio está activo
+  ]
 
+  provisioner "local-exec" {
+    interpreter = ["cmd", "/C"]
+    command = <<-EOT
+      setlocal enabledelayedexpansion
+      for /f "tokens=*" %%i in ('gcloud run services describe ${var.service_name} --region ${var.region} --project ${var.project_id} --format "value(status.url)"') do (
+        set URL=%%i
+      )
+      echo Abriendo el navegador en: !URL!
+      start "" !URL!
+      endlocal
+    EOT
+  }
+}

@@ -116,3 +116,39 @@ module "cloud_run_service" {
 
   depends_on = [module.artifact_registry, module.cloudbuildservice_submit]
 }
+
+# Crear un único dataset (por ejemplo, "common-dataset")
+module "bigquery_dataset" {
+  source     = "./modules/bigquery_dataset"
+  project    = var.project_id
+  location   = var.region
+  dataset_id = "users"
+}
+
+# Crear la tabla "ayudantes"
+module "bigquery_ayudantes" {
+  source      = "./modules/bigquery_table"
+  project     = var.project_id
+  dataset_id  = module.bigquery_dataset.dataset_id
+  table_id    = "unmatched_volunteers"
+  schema_file = "/schemas/volunteer.json"
+}
+
+# Crear la tabla "necesitados"
+module "bigquery_necesitados" {
+  source      = "./modules/bigquery_table"
+  project     = var.project_id
+  dataset_id  = module.bigquery_dataset.dataset_id
+  table_id    = "unmatched_requests"
+  schema_file = "/schemas/requests.json"
+}
+
+# Crear la tabla "matched"
+module "bigquery_matched" {
+  source      = "./modules/bigquery_table"
+  project     = var.project_id
+  dataset_id  = module.bigquery_dataset.dataset_id
+  table_id    = "matched_pairs"
+  schema_file = "/schemas//matched.json"
+}
+

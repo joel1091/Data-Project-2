@@ -1,0 +1,38 @@
+[
+    {
+      "name": "category",
+      "type": "STRING",
+      "mode": "NULLABLE"
+    },
+    {
+      "name": "request_id",
+      "type": "STRING",
+      "mode": "NULLABLE"
+    },
+    {
+      "name": "request_data",
+      "type": "STRING",
+      "mode": "NULLABLE"
+    },
+    {
+      "name": "volunteer_data",
+      "type": "STRING",
+      "mode": "NULLABLE"
+    },
+    {
+      "name": "distance",
+      "type": "FLOAT",
+      "mode": "NULLABLE"
+    },
+    {
+      "name": "matched_timestamp",
+      "type": "TIMESTAMP",
+      "mode": "NULLABLE"
+    },
+    {
+      "name": "insertion_timestamp",
+      "type": "TIMESTAMP",
+      "mode": "NULLABLE"
+    }
+  ]
+  

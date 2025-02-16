@@ -9,14 +9,18 @@ from streamlit_folium import st_folium
 from folium.plugins import MousePosition
 from geopy.geocoders import Nominatim
 from folium import plugins
+from dotenv import load_dotenv
+import os
+
 
 # Configuración de Pub/Sub
-project_id = '<GCP_PROJECT_ID>'
-topic_id = 'ayudantes-events'  
+load_dotenv()
+PROJECT_ID = os.getenv("GCP_PROJECT_ID", "your-gcp-project-id")
+topic_id = 'ayudantes-events'
 
-# Inicializar el cliente de Pub/Sub
 publisher = pubsub_v1.PublisherClient()
-topic_path = publisher.topic_path(project_id, topic_id)
+topic_path = publisher.topic_path(PROJECT_ID, topic_id)
+
 
 # Geolocalizador de OpenStreetMap (Para transformar de coordenadas a nombre de pueblo)
 geolocator = Nominatim(user_agent="geoapi")

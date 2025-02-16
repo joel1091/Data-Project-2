@@ -7,6 +7,14 @@ provider "google" {
 }
 
 terraform {
+  backend "gcs" {
+    bucket = "dataproject2-alobce-terraform-state"  
+    prefix = "terraform/state"        
+  }
+}
+
+
+terraform {
   required_version = ">= 1.3.0"
 
   required_providers {
