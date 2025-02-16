@@ -18,7 +18,7 @@ steps:
     id: Run Dataflow Flex Template
     args: ['dataflow', 'flex-template', 'run', '$_DATAFLOW_JOB_NAME',
            '--template-file-gcs-location=gs://$_DATAFLOW_BASE_BUCKET/$_DATAFLOW_TEMPLATE_NAME.json',
-           '--parameters=project_id=$PROJECT_ID,help_subscription=$_HELP_PUBSUB_SUBSCRIPTION_NAME,volunteer_subscription=$_VOLUNTEER_PUBSUB_SUBSCRIPTION_NAME,bigquery_dataset=$_BIGQUERY_DATASET_NAME_',
+           '--parameters=project_id=$PROJECT_ID,help_topic=$_HELP_TOPIC_NAME,help_subscription=$_HELP_PUBSUB_SUBSCRIPTION_NAME,volunteers_topic=$_VOLUNTEERS_TOPIC_NAME,volunteer_subscription=$_VOLUNTEER_PUBSUB_SUBSCRIPTION_NAME,bigquery_dataset=$_BIGQUERY_DATASET_NAME_',
            '--region=$_REGION_ID',
            '--max-workers=1'
     ]
@@ -36,6 +36,8 @@ substitutions:
   _ARTIFACT_REGISTRY_IMAGE_NAME: data-project2-image
   _DATAFLOW_PYTHON_FILE_PATH: dataflow.py
   _DATAFLOW_REQUIREMENTS_FILE_PATH: requirements.txt
-  _HELP_PUBSUB_SUBSCRIPTION_NAME: projects/$PROJECT_ID/subscriptions/ayudantes-events-sub
-  _VOLUNTEER_PUBSUB_SUBSCRIPTION_NAME: projects/$PROJECT_ID/subscriptions/necesitados-events-sub
+  _VOLUNTEER_TOPIC_NAME: projects/$PROJECT_ID/topics/ayudantes-events
+  _VOLUNTEER_PUBSUB_SUBSCRIPTION_NAME: projects/$PROJECT_ID/subscriptions/ayudantes-events-sub
+  _HELP_TOPIC_NAME: projects/$PROJECT_ID/topics/necesitados-events
+  _HELP_PUBSUB_SUBSCRIPTION_NAME: projects/$PROJECT_ID/subscriptions/necesitados-events-sub
   _BIGQUERY_DATASET_NAME_: users
