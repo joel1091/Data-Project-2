@@ -69,7 +69,7 @@ cd Data-Project-2
 
 ```
 gcloud auth login
-gcloud config set project [ID_DEL_PROYECTO]
+gcloud config set project dataproject2425
 gcloud config set compute/region europe-west1
 ```
 
@@ -77,7 +77,7 @@ gcloud config set compute/region europe-west1
 
 ```bash
 cd Dataflow
-gcloud builds submit --config=cloudbuild.yml .w
+gcloud builds submit --config=cloudbuild.yml .
 ```
 
 ### 3. Desplegar infraestructura con Terraform
