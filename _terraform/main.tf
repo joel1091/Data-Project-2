@@ -197,6 +197,8 @@ module "dataflow_trigger" {
   volunteer_pubsub_subscription_name = var.volunteer_pubsub_subscription_name
   help_topic_name                 = var.help_topic_name
   help_pubsub_subscription_name   = var.help_pubsub_subscription_name
+
+  depends_on = [google_storage_bucket.dataflow_bucket]
 }
 
 

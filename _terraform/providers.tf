@@ -8,7 +8,7 @@ provider "google" {
 
 terraform {
   backend "gcs" {
-    bucket = "dataproject2-alobce-terraform-state"  
+    bucket = "dataproject22-alobce-terraform-state"  
     prefix = "terraform/state"        
   }
 }
