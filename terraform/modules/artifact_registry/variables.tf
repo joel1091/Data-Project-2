@@ -1,15 +1,10 @@
-variable "repository_id" {
-  description = "ID del repositorio de Artifact Registry"
-  type        = string
-}
-
 variable "location" {
-  description = "Ubicación para el repositorio (ej. europe-west1)"
+  description = "La ubicación del repositorio"
   type        = string
 }
 
-variable "format" {
-  description = "Formato del repositorio (ej. DOCKER)"
+variable "repository_id" {
+  description = "El ID del repositorio"
   type        = string
 }
 
@@ -19,7 +14,13 @@ variable "description" {
   default     = ""
 }
 
-variable "service_account_email" {
-  description = "Correo electrónico de la cuenta de servicio que tendrá permisos para subir imágenes"
+variable "format" {
+  description = "Formato del repositorio (por ejemplo, DOCKER)"
   type        = string
 }
+
+variable "service_account_email" {
+  description = "Email de la cuenta de servicio que usará el repositorio"
+  type        = string
+}
+

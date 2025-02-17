@@ -1,14 +1,18 @@
-provider "google-beta" {
-  project = var.project_id
-  region  = var.region
-  zone    = var.zone
-}
+
 
 provider "google" {
   project = var.project_id
   region  = var.region
   zone    = var.zone
 }
+
+terraform {
+  backend "gcs" {
+    bucket = "dataproject2-alobce-terraform-state"  
+    prefix = "terraform/state"        
+  }
+}
+
 
 terraform {
   required_version = ">= 1.3.0"

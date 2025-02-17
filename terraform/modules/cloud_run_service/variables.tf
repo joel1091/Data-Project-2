@@ -1,17 +1,25 @@
 variable "project_id" {
-  description = "The GCP project ID"
+  description = "ID del proyecto de Google Cloud"
   type        = string
-  default     = "steam-circlet-447114-h5"
 }
 
 variable "region" {
-  description = "The region to deploy the Cloud Run service"
+  description = "Región donde se ejecuta el servicio de Cloud Run"
   type        = string
-  default     = "europe-west1"
 }
 
 variable "service_name" {
-  description = "Name of the Cloud Run service"
-  type        = string
-  default     = "app"
+  description = "Nombre del Cloud Run Service"
+  type = string
 }
+
+variable "image_name_service" {
+  description = "Nombre de la imagen Docker"
+  type        = string
+}
+
+variable "service_account_email" {
+  description = "Email de la cuenta de servicio que usará el servicio de Cloud Run"
+  type        = string
+}
+
