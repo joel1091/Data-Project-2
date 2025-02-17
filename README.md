@@ -73,19 +73,13 @@ gcloud config set project dataproject2425
 gcloud config set compute/region europe-west1
 ```
 
-### 2. Desplegar infraestructura con Terraform
+### 3. Desplegar infraestructura con Terraform
 
 ```bash
 cd terraform
 terraform init
 terraform plan
 terraform apply
-```
-### 3. Crear la Flex Template de Dataflow
-
-```bash
-cd Dataflow
-gcloud builds submit --config=cloudbuild.yml .
 ```
 
 ### 4. Acceder a Streamlit
