@@ -186,4 +186,28 @@ module "discord_function" {
 }
 
 
+resource "google_storage_bucket" "bucket-dataflow" {
+  name     = "bucket-dataflow-dp2425abc"
+  location = var.region
+}
 
+
+resource "null_resource" "execute_cloud_build" {
+
+  depends_on = [
+
+    module.pubsub_ayudantes,
+    module.pubsub_necesitados,
+    module.pubsub_matched,
+    module.bigquery_dataset,
+    module.artifact_registry,
+    google_storage_bucket.bucket-dataflow
+
+  ]
+
+  provisioner "local-exec" {
+    command = "cd ../DataFlow && gcloud builds submit --config cloudbuild.yml"
+    # Alternativa para sistemas Windows:
+    # command = "pushd ${path.module}/dataflow && gcloud builds submit --config cloudbuild.yml && popd"
+  }
+}
