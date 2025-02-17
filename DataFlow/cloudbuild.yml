@@ -1,43 +1,69 @@
 steps:
+  # Paso de debugging
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        ls -la
+        pwd
+        echo "Checking Python files..."
+        find . -name "*.py"
+        echo "Checking requirements file..."
+        find . -name "requirements.txt"
+
+  # Paso de build del template
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     entrypoint: gcloud
     id: Build Dataflow Flex Template
-    args: ['dataflow', 'flex-template', 'build',
-           'gs://$_DATAFLOW_BASE_BUCKET/$_DATAFLOW_TEMPLATE_NAME.json',
-           '--image-gcr-path=$_REGION_ID-docker.pkg.dev/$PROJECT_ID/$_ARTIFACT_REGISTRY_REPOSITORY/$_ARTIFACT_REGISTRY_IMAGE_NAME:$COMMIT_SHA',
-           '--flex-template-base-image=PYTHON3',
-           '--sdk-language=PYTHON',
-           '--py-path=.',
-           '--env=FLEX_TEMPLATE_PYTHON_PY_FILE=$_DATAFLOW_PYTHON_FILE_PATH',
-           '--env=FLEX_TEMPLATE_PYTHON_REQUIREMENTS_FILE=$_DATAFLOW_REQUIREMENTS_FILE_PATH'
-    ]
+    args:
+      - 'dataflow'
+      - 'flex-template'
+      - 'build'
+      - 'gs://$_DATAFLOW_BASE_BUCKET/$_DATAFLOW_TEMPLATE_NAME.json'
+      - '--image-gcr-path=$_ARTIFACT_REGISTRY_PATH'
+      - '--sdk-language=PYTHON'
+      - '--flex-template-base-image=PYTHON3'
+      - '--py-path=.'
+      - '--env=FLEX_TEMPLATE_PYTHON_PY_FILE=$_DATAFLOW_PYTHON_FILE_PATH'
+      - '--env=FLEX_TEMPLATE_PYTHON_REQUIREMENTS_FILE=$_DATAFLOW_REQUIREMENTS_FILE_PATH'
     waitFor: ['-']
-
+  
+  # Paso para ejecutar el template
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     entrypoint: gcloud
     id: Run Dataflow Flex Template
-    args: ['dataflow', 'flex-template', 'run', '$_DATAFLOW_JOB_NAME',
-           '--template-file-gcs-location=gs://$_DATAFLOW_BASE_BUCKET/$_DATAFLOW_TEMPLATE_NAME.json',
-           '--parameters=project_id=$PROJECT_ID,help_topic=$_HELP_TOPIC_NAME,help_subscription=$_HELP_PUBSUB_SUBSCRIPTION_NAME,volunteers_topic=$_VOLUNTEERS_TOPIC_NAME,volunteer_subscription=$_VOLUNTEER_PUBSUB_SUBSCRIPTION_NAME,bigquery_dataset=$_BIGQUERY_DATASET_NAME_',
-           '--region=$_REGION_ID',
-           '--max-workers=1'
-    ]
+    args:
+      - 'dataflow'
+      - 'flex-template'
+      - 'run'
+      - '$_JOB_NAME'
+      - '--template-file-gcs-location=gs://$_DATAFLOW_BASE_BUCKET/$_DATAFLOW_TEMPLATE_NAME.json'
+      - '--region=$_REGION'
+      - '--parameters=project_id=$_PROJECT_ID'
+      - '--parameters=help_topic=$_HELP_TOPIC'
+      - '--parameters=help_subscription=$_HELP_SUBSCRIPTION'
+      - '--parameters=volunteers_topic=$_VOLUNTEERS_TOPIC'
+      - '--parameters=volunteers_subscription=$_VOLUNTEERS_SUBSCRIPTION'
+      - '--parameters=matched_events=$_MATCHED_EVENTS'
+      - '--parameters=bigquery_dataset=$_BIGQUERY_DATASET'
     waitFor: ['Build Dataflow Flex Template']
-
+ 
 options:
-  logging: STACKDRIVER_ONLY
-
+  logging: CLOUD_LOGGING_ONLY
+ 
 substitutions:
-  _DATAFLOW_BASE_BUCKET: <NAME-BUCKET>
-  _DATAFLOW_JOB_NAME: dataflow-dp2
-  _DATAFLOW_TEMPLATE_NAME: dataflow-dp2-template
-  _REGION_ID: europe-west1
-  _ARTIFACT_REGISTRY_REPOSITORY: data-project2
-  _ARTIFACT_REGISTRY_IMAGE_NAME: data-project2-image
-  _DATAFLOW_PYTHON_FILE_PATH: dataflow.py
-  _DATAFLOW_REQUIREMENTS_FILE_PATH: requirements.txt
-  _VOLUNTEER_TOPIC_NAME: projects/$PROJECT_ID/topics/ayudantes-events
-  _VOLUNTEER_PUBSUB_SUBSCRIPTION_NAME: projects/$PROJECT_ID/subscriptions/ayudantes-events-sub
-  _HELP_TOPIC_NAME: projects/$PROJECT_ID/topics/necesitados-events
-  _HELP_PUBSUB_SUBSCRIPTION_NAME: projects/$PROJECT_ID/subscriptions/necesitados-events-sub
-  _BIGQUERY_DATASET_NAME_: users
+  _DATAFLOW_BASE_BUCKET: "dataflow-template-edem-abc"
+  _DATAFLOW_TEMPLATE_NAME: "dataflow_gcloud_temp"
+  _ARTIFACT_REGISTRY_PATH: "europe-west1-docker.pkg.dev/dataproject2425/data-project2/dataflow_gcloud:latest"
+  _DATAFLOW_PYTHON_FILE_PATH: "dataflow.py"
+  _DATAFLOW_REQUIREMENTS_FILE_PATH: "requirements.txt"
+  _JOB_NAME: "data-project-pipeline"
+  _REGION: "europe-west1"
+  _PROJECT_ID: "dataproject2425"
+  _HELP_TOPIC: "projects/dataproject2425/topics/necesitados-events"
+  _HELP_SUBSCRIPTION: "projects/dataproject2425/subscriptions/necesitados-events-sub"
+  _VOLUNTEERS_TOPIC: "projects/dataproject2425/topics/ayudantes-events"
+  _VOLUNTEERS_SUBSCRIPTION: "projects/dataproject2425/subscriptions/ayudantes-events-sub"
+  _MATCHED_EVENTS: "projects/dataproject2425/topics/matched-events"
+  _BIGQUERY_DATASET: "users"
