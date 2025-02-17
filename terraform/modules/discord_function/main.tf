@@ -51,5 +51,5 @@ resource "google_storage_bucket" "functions_source" {
 resource "google_storage_bucket_object" "empty_zip" {
   name   = "empty.zip"
   bucket = google_storage_bucket.functions_source.name
-  source = "C:/Data-Project-2/discord/empty.zip"  # Ruta al archivo ZIP en tu máquina local
+  source = "../discord/empty.zip"  # Ruta al archivo ZIP en tu máquina local
 }
