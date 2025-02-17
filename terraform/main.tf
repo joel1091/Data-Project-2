@@ -183,12 +183,14 @@ module "discord_function" {
   tag            = var.discord_tag
   pubsub_topic   = "projects/${var.project_id}/topics/${module.pubsub_matched.topic_name}"
   entry_point    = "notify_discord"  
+  depends_on = [ module.artifact_registry ]
 }
 
 
 resource "google_storage_bucket" "bucket-dataflow" {
   name     = "bucket-dataflow-dp2425abc"
   location = var.region
+  force_destroy = true
 }
 
 
