@@ -1,15 +1,3 @@
-resource "null_resource" "build_and_push_function_image" {
-  provisioner "local-exec" {
-    command = <<EOT
-      cd ../discord
-      echo "Construyendo la imagen Docker..."
-      docker build -t ${var.artifact_registry_domain}/${var.project_id}/${var.repository_id}/${var.image_name}:${var.tag} .
-      echo "Subiendo la imagen a Artifact Registry..."
-      docker push ${var.artifact_registry_domain}/${var.project_id}/${var.repository_id}/${var.image_name}:${var.tag}
-    EOT
-  }
-}
-
 resource "google_cloudfunctions2_function" "notify_discord_v2" {
   name     = "notify-discord-v2"
   location = var.region
@@ -38,8 +26,6 @@ build_config {
     trigger_region = var.region
     pubsub_topic   = var.pubsub_topic
   }
-
-  depends_on = [null_resource.build_and_push_function_image]
 }
 
 

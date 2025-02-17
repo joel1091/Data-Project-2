@@ -187,20 +187,18 @@ module "discord_function" {
 
 
 resource "google_storage_bucket" "bucket-dataflow" {
-  name     = "bucket-dataflow"
+  name     = "bucket-dataflow-dp2425abc"
   location = var.region
 }
 
 
 resource "null_resource" "execute_cloud_build" {
-  triggers = {
-
-    cloudbuild_content = filemd5("${path.module}/dataflow/cloudbuild.yml")
-  }
 
   depends_on = [
 
-    module.pubsub,
+    module.pubsub_ayudantes,
+    module.pubsub_necesitados,
+    module.pubsub_matched,
     module.bigquery_dataset,
     module.artifact_registry,
     google_storage_bucket.bucket-dataflow
@@ -208,7 +206,7 @@ resource "null_resource" "execute_cloud_build" {
   ]
 
   provisioner "local-exec" {
-    command = "cd ${path.module}/dataflow && gcloud builds submit --config cloudbuild.yml"
+    command = "cd ../DataFlow && gcloud builds submit --config cloudbuild.yml"
     # Alternativa para sistemas Windows:
     # command = "pushd ${path.module}/dataflow && gcloud builds submit --config cloudbuild.yml && popd"
   }
