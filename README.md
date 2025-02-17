@@ -19,10 +19,10 @@ Aunque este proyecto se diseñó inicialmente para asistir a las personas afecta
 
 ## 🏗️ **Arquitectura del Sistema**
 
-```
-AQUI ES DONDE VA LA IMAGEN DE LA ARQUITECTURA
 
-```
+![arquitectura](https://github.com/user-attachments/assets/9b51ea04-aa58-4c69-b663-acaf667ad9e4)
+
+
 
 ## 🔄 **Flujo de Datos**
 
@@ -65,16 +65,19 @@ git clone https://github.com/joel1091/Data-Project-2.git
 cd Data-Project-2
 ```
 
-### 2. Configurar variables de entorno
-
-Crea un archivo `.env` con las siguientes variables:
+### 2. Iniciar sesión Google Cloud CLI
 
 ```
-GOOGLE_APPLICATION_CREDENTIALS=path/to/your/credentials.json
-PROJECT_ID=your-gcp-project-id
-PUBSUB_HELP_TOPIC=dana-help-topic
-PUBSUB_VOLUNTEERS_TOPIC=dana-volunteers-topic
-BIGQUERY_DATASET=dana_valencia
+gcloud auth login
+gcloud config set project [ID_DEL_PROYECTO]
+gcloud config set compute/region europe-west1
+```
+
+### 2. Crear la Flex Template de Dataflow
+
+```bash
+cd Dataflow
+gcloud builds submit --config=cloudbuild.yml .w
 ```
 
 ### 3. Desplegar infraestructura con Terraform
@@ -86,42 +89,19 @@ terraform plan
 terraform apply
 ```
 
-### 4. Desplegar el pipeline de Dataflow
-
-```bash
-cd DataFlow
-python dataflow.py \
-  --project_id=your-project-id \
-  --help_topic=projects/your-project-id/topics/dana-help-topic \
-  --help_subscription=projects/your-project-id/subscriptions/dana-help-subscription \
-  --volunteers_topic=projects/your-project-id/topics/dana-volunteers-topic \
-  --volunteers_subscription=projects/your-project-id/subscriptions/dana-volunteers-subscription \
-  --bigquery_dataset=dana_valencia \
-  --runner=DataflowRunner \
-  --region=your-region
+### 4. Acceder a Streamlit
+Para poder enviar mensajes manualmente, accede a streamlit ejecutando el siguiente comando:
 ```
-
-### 5. Desplegar la aplicación Streamlit
-
-```bash
-cd Streamlit
-docker build -t dana-streamlit-app .
-docker run -p 8501:8501 dana-streamlit-app
+gcloud run services list --platform managed --region europe-west1
 ```
-
-### 6. Acceder a la aplicación
-
-Abre tu navegador y ve a:
-```
-http://localhost:8501
-```
+Ahora haz click en el link que te proporciona el service `Streamlit`
 
 ## 📁 **Archivos Clave**
 
 | Archivo | Descripción |
 |---------|-------------|
 | terraform/main.tf | Configuración principal de la infraestructura |
-| DataFlow/dataflow.py | Pipeline de procesamiento de datos |
+| Dataflow/dataflow.py | Pipeline de procesamiento de datos |
 | Streamlit/app.py | Plataforma para solicitar o pedir ayuda |
 | app/automatic/main.py | Generador automático de voluntarios y necesitados |
 
@@ -163,9 +143,9 @@ El proyecto incluye un dashboard en Grafana que muestra:
 - úmero de peticiones sin coincidencia por localización y categoría.
 
 ### Para acceder a Grafana, sigue los siguientes pasos:
-1. Ejecuta este comando y accede al link proporcionado
+1. Ejecuta este comando y accede al link proporcionado (Service: Grafana)
 ```bash
-gcloud <>
+gcloud run services list --platform managed --region europe-west1
 ```
 2. Inicia sesión: 
                <br>
