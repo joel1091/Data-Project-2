@@ -11,26 +11,5 @@ job_name = "generadores-job-automatic"
 service_name = "streamlit"
 grafana_service_name = "grafana"
 
-trigger_name                  = "dataflow-trigger"
-trigger_description           = "Trigger para Dataflow Flex Template"
-github_owner                  = "joel1091"
-github_repo_name              = "Data-Project-2"
-github_branch                 = "main"
-build_filename                = "DataFlow/build.yml"
-
-dataflow_base_bucket          = "dataflow-template-edem-abc"
-dataflow_job_name             = "dataflow-dp2"
-dataflow_template_name        = "dataflow-dp2-template"
-region_id                     = "europe-west1"
-
-artifact_registry_repository  = "data-project2"
-artifact_registry_image_name  = "data-project2-image"
-
-dataflow_python_file_path     = "DataFlow/dataflow.py"
-dataflow_requirements_file_path = "DataFlow/requirements.txt"
-bigquery_dataset_name         = "users"
-
-volunteer_topic_name           = "projects/dataproject2425/topics/ayudantes-events"
-volunteer_pubsub_subscription_name = "projects/dataproject2425/subscriptions/ayudantes-events-sub"
-help_topic_name                 = "projects/dataproject2425/topics/necesitados-events"
-help_pubsub_subscription_name   = "projects/dataproject2425/subscriptions/necesitados-events-sub"
+discord_image_name = "discord-notifier"
+discord_tag        = "latest"

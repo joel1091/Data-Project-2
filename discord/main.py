@@ -64,7 +64,6 @@ def notify_discord(cloud_event):
             json=discord_message
         )
 
-        # Verificar si la notificación se envió correctamente
         if response.status_code == 204:
             print(f"Notificación enviada exitosamente para match_id: {match_data['match_id']}")
             return {"status": "success"}
@@ -74,3 +73,6 @@ def notify_discord(cloud_event):
     except Exception as e:
         print(f"Error procesando el mensaje: {str(e)}")
         raise e
+
+
+
