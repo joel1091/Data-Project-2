@@ -14,28 +14,57 @@ variable "zone" {
   type        = string
 }
 
-variable "build_bucket" {
-  description = "Nombre del bucket de Cloud Storage para subir el contexto de build"
+variable "repository_id" {
+  description = "El ID del repositorio en Artifact Registry"
+  type        = string
+}
+
+variable "image_name" {
+  description = "Nombre de la imagen Docker"
+  type        = string
+}
+
+variable "image_name_service" {
+  description = "Nombre de la imagen de Docker"
+  type = string
+}
+
+variable "tag" {
+  description = "Etiqueta para la imagen Docker"
+  type        = string
+}
+
+variable "build_context_dir" {
+  description = "Directorio de contexto para la construcción de la imagen Docker."
+  type        = string
+}
+
+variable "build_context_dir_service" {
+  description = "Directorio de contexto para la construcción de la imagen Docker Service."
+  type        = string
+}
+
+variable "job_name" {
+  description = "Nombre del trabajo de Cloud Build"
   type        = string
 }
 
 variable "service_name" {
-  description = "Name of the Cloud Run service"
-  type        = string
-  default     = "app"
+  description = "Nombre del Cloud Run Service"
+  type = string
 }
 
-variable "subnetwork" {
-  description = "La subred a la que se desplegará"
+variable "grafana_service_name"{
+  description = "Nombre de Grafana Service"
+  type = string
+}
+
+variable "discord_image_name" {
+  description = "Nombre de la imagen Docker para la función de Discord"
   type        = string
 }
 
-variable "service_account_email" {
-  description = "El email de la cuenta de servicio a utilizar"
+variable "discord_tag" {
+  description = "Etiqueta de la imagen Docker para la función de Discord"
   type        = string
 }
-
-# variable "dataflow_template_gcs_path" {
-#   description = "Ruta al Dataflow Flex Template en GCS"
-#   type        = string
-# }
