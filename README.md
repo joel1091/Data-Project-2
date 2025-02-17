@@ -164,9 +164,13 @@ gcloud run services list --platform managed --region europe-west1
    
 8. Haz click en `New` y en `Import` 
    
-9.  Importa el archivo json: [dashboard-grafana.json](Data-Project-2/blob/main/grafana/dashboard-grafana.json)
+9.  Importa el archivo json: [dashboard-grafana.json](Grafana/dashboard-grafana.json)
     
 10. Selecciona `Google BigQuery data source`
+
+</br>
+
+![Grafana-Dashboard](Grafana/Grafana_dashboard.png)
 
 ## 🔧 **Tecnologías Utilizadas**
 
