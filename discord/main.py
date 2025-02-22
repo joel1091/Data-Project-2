@@ -5,7 +5,7 @@ import requests
 from datetime import datetime
 
 # Configura tu webhook URL de Discord
-DISCORD_WEBHOOK_URL = "https://discord.com/api/webhooks/1340742821463724186/qraP9mRJQ4rL2iVpnjN4ovBISk_rHV2x_9wCZNhmDL_-JiIbMd_y8SiuBM1XLxt2BWeK"
+DISCORD_WEBHOOK_URL = "<URL_API_WEBHOOK>"
 
 @functions_framework.cloud_event
 def notify_discord(cloud_event):
