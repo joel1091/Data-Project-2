@@ -73,7 +73,11 @@ gcloud config set project dataproject2425
 gcloud config set compute/region europe-west1
 ```
 
-### 3. Desplegar infraestructura con Terraform
+### 3. Activar las notificaciones de Discord
+
+`Seguir los pasos explicados en el punto de las Notificaciones`
+
+### 4. Desplegar infraestructura con Terraform
 
 ```bash
 cd terraform
@@ -82,12 +86,32 @@ terraform plan
 terraform apply
 ```
 
-### 4. Acceder a Streamlit
+### 5. Acceder a Streamlit
 Para poder enviar mensajes manualmente, accede a streamlit ejecutando el siguiente comando:
 ```
 gcloud run services list --platform managed --region europe-west1
 ```
 Ahora haz click en el link que te proporciona el service `Streamlit`
+
+## 🔔 **Notificaciones en Discord**  
+
+Para recibir notificaciones automáticas en un canal de Discord, sigue estos pasos:  
+
+### 1️⃣ Crear un Webhook en Discord  
+1. Abre Discord y ve al servidor donde quieres recibir las notificaciones.  
+2. Dirígete a **Ajustes del servidor** → **Integraciones**.  
+3. Haz clic en **Webhooks** → **Nuevo Webhook**.  
+4. Asigna un nombre al webhook y selecciona el canal donde enviará las notificaciones.  
+5. Copia la URL del webhook generado.  
+
+### 2️⃣ Configurar el Webhook en el Proyecto  
+1. Abre el archivo `discord/main.py`.  
+2. Busca la variable `DISCORD_WEBHOOK_URL` y reemplaza `<URL_API_WEBHOOK>` con la URL copiada en el paso anterior.  
+
+   ```python
+   DISCORD_WEBHOOK_URL = "https://discord.com/api/webhooks/..."
+
+3. Guarda los cambios y comprime en esa misma carpeta los archivos `requirements.txt` y `main.py` con el nombre **empty.zip**
 
 ## 📁 **Archivos Clave**
 
